@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- 导入 Directory.Build.props（可选的路径配置） -->
+  <Import Condition=" !Exists('Directory.Build.props.user') " Project="Directory.Build.props.default" />
+  <Import Condition=" Exists('Directory.Build.props.user') " Project="Directory.Build.props.user" />
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{BB0A9A37-A833-46D1-8E16-639683A71BEF}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>HarvestToolUproot</RootNamespace>
+    <AssemblyName>HarvestToolUproot</AssemblyName>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <!-- 引用游戏核心库和 Harmony -->
+  <ItemGroup>
+    <Reference Include="0Harmony">
+      <HintPath>$(GameLibsFolder)\0Harmony.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GameLibsFolder)\Assembly-CSharp.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp-firstpass">
+      <HintPath>$(GameLibsFolder)\Assembly-CSharp-firstpass.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Xml" />
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GameLibsFolder)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(GameLibsFolder)\UnityEngine.UI.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>$(GameLibsFolder)\UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+  <!-- 你的源码文件（根据需要增减） -->
+  <ItemGroup>
+    <Compile Include="Mod.cs" />
+    <Compile Include="Patches\HarvestToolPatch.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <!-- 如果有 STRINGS 类 -->
+    <Compile Include="STRINGS.cs" />
+  </ItemGroup>
+  <!-- 可选的 NuGet 包（PLib 不是必须的，如果你只需要 Harmony，可以不添加） -->
+  <ItemGroup>
+    <PackageReference Include="PLib">
+      <Version>4.25.0</Version>
+    </PackageReference>
+  </ItemGroup>
+  <!-- 如果有嵌入式资源（如图标、纹理），可以添加 -->
+  <!--
+  <ItemGroup>
+    <EmbeddedResource Include="ModAssets\assets\*.dds" />
+  </ItemGroup>
+  -->
+  <ItemGroup />
+  <ItemGroup>
+    <TranslationFiles Include="ModAssets\translations\*.po" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="ModAssets\assets\zh.po" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- 模组元数据（用于 mod_info.yaml） -->
+  <PropertyGroup>
+    <MinimumSupportedBuild>744825</MinimumSupportedBuild>
+    <APIVersion>2</APIVersion>
+    <SupportedContent>ALL</SupportedContent>
+    <ModStaticID>HarvestToolUproot</ModStaticID>
+    <ModTitle>收获工具 - 批量拔除</ModTitle>
+    <ModDescription>在收获工具中添加“拔除”选项，可批量标记植物拔除</ModDescription>
+    <ModVersion>1.0.0.0</ModVersion>
+  </PropertyGroup>
+  <!-- 构建后自动复制到游戏 Mod 文件夹 -->
+  <Target Name="CopyModToGame" AfterTargets="Build">
+    <!-- 生成 mod_info.yaml -->
+    <WriteLinesToFile File="$(ModFolder)/mod_info.yaml" Overwrite="true" Encoding="UTF-8" Lines="minimumSupportedBuild: $(MinimumSupportedBuild); APIVersion: $(APIVersion); supportedContent: $(SupportedContent); version: $(ModVersion); staticID: $(ModStaticID)" />
+    <!-- 确保目标目录存在 -->
+    <MakeDir Directories="$(ModFolder)" Condition="!Exists('$(ModFolder)')" />
+    <!-- 复制 DLL -->
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFolder="$(ModFolder)" />
+    <!-- 复制 PLib（如果使用了） -->
+    <Copy SourceFiles="$(OutputPath)PLib.dll" DestinationFolder="$(ModFolder)" Condition="Exists('$(OutputPath)PLib.dll')" />
+    <!-- 复制 .pdb（调试用） -->
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).pdb" DestinationFolder="$(ModFolder)" Condition="Exists('$(OutputPath)$(AssemblyName).pdb')" />
+    <!-- 复制 翻译文件 -->
+    <Copy SourceFiles="@(TranslationFiles)" DestinationFolder="$(ModFolder)\translations\" />
+    <!-- 复制预览图（如果有） -->
+    <!--
+    <Copy SourceFiles="ModAssets/preview.png" DestinationFolder="$(ModFolder)" />
+    -->
+  </Target>
+</Project>
