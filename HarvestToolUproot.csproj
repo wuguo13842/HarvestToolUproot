@@ -70,11 +70,10 @@
   </ItemGroup>
   <!-- 你的源码文件（根据需要增减） -->
   <ItemGroup>
-    <Compile Include="Components\UprootOverlayIcon.cs" />
     <Compile Include="Mod.cs" />
     <Compile Include="Patches\HarvestDesignatablePatch.cs" />
     <Compile Include="Patches\HarvestToolPatch.cs" />
-    <Compile Include="Patches\UprootableOverlayPatch.cs" />
+    <Compile Include="Patches\UprootablePatch.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <!-- 如果有 STRINGS 类 -->
     <Compile Include="STRINGS.cs" />

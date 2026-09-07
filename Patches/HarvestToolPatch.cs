@@ -1,12 +1,25 @@
 ﻿using HarmonyLib;
 using UnityEngine;
-using HarvestToolUproot.Components;
+using System.Reflection;  // 添加这行
 
 namespace HarvestToolUproot.Patches
 {
     [HarmonyPatch(typeof(HarvestTool))]
     public static class HarvestToolPatch
     {
+        // 缓存 RefreshOverlayIcon 方法
+        private static MethodInfo refreshOverlayIconMethod;
+
+        private static void RefreshIcon(HarvestDesignatable hd)
+        {
+            if (hd == null) return;
+            if (refreshOverlayIconMethod == null)
+            {
+                refreshOverlayIconMethod = AccessTools.Method(typeof(HarvestDesignatable), "RefreshOverlayIcon");
+            }
+            refreshOverlayIconMethod?.Invoke(hd, new object[] { null });
+        }
+
         [HarmonyPostfix]
         [HarmonyPatch("OnPrefabInit")]
         public static void OnPrefabInit_Postfix(HarvestTool __instance)
@@ -42,9 +55,9 @@ namespace HarvestToolUproot.Patches
             if (uprootable != null && uprootable.CanUproot())
             {
                 uprootable.MarkForUproot(true);
-                var icon = uprootable.GetComponent<UprootOverlayIcon>();
-                if (icon != null)
-                    icon.Refresh();
+                var harvestDesignatable = go.GetComponent<HarvestDesignatable>();
+                if (harvestDesignatable != null)
+                    RefreshIcon(harvestDesignatable);  // 使用反射调用
             }
         }
 
@@ -52,13 +65,11 @@ namespace HarvestToolUproot.Patches
         [HarmonyPatch("OnActivateTool")]
         public static void OnActivateTool_Postfix(HarvestTool __instance)
         {
-            GameScheduler.Instance.Schedule("RefreshAllUprootIcons", 0f, (obj) =>
+            GameScheduler.Instance.Schedule("RefreshAllHarvestIcons", 0f, (obj) =>
             {
-                foreach (var item in global::Components.Uprootables.Items)
+                foreach (var item in Components.HarvestDesignatables.Items)
                 {
-                    var icon = item.GetComponent<UprootOverlayIcon>();
-                    if (icon != null)
-                        icon.Refresh();
+                    RefreshIcon(item);
                 }
             }, null);
         }
@@ -67,11 +78,9 @@ namespace HarvestToolUproot.Patches
         [HarmonyPatch("OnDeactivateTool")]
         public static void OnDeactivateTool_Postfix(HarvestTool __instance)
         {
-            foreach (var item in global::Components.Uprootables.Items)
+            foreach (var item in Components.HarvestDesignatables.Items)
             {
-                var icon = item.GetComponent<UprootOverlayIcon>();
-                if (icon != null)
-                    icon.Refresh();
+                RefreshIcon(item);
             }
         }
     }
