@@ -19,18 +19,16 @@ namespace HarvestToolUproot.Components
             harvestDesignatable = GetComponent<HarvestDesignatable>();
             if (uprootable == null) return;
 
-            // 获取原生拔除图标
             var statusItem = Db.Get().MiscStatusItems.PendingUproot;
             if (statusItem != null && statusItem.sprite != null)
                 uprootSprite = statusItem.sprite.sprite;
 
             if (uprootSprite == null)
             {
-                Debug.LogWarning("[UprootOverlayIcon] 无法获取 PendingUproot 图标");
+                Debug.LogWarning("[HarvestToolUproot] 无法获取 PendingUproot 图标");
                 return;
             }
 
-            // 缓存 IsOptionOn 方法（备用，实际上新逻辑不再需要）
             if (isOptionOnMethod == null)
             {
                 isOptionOnMethod = typeof(HarvestTool).GetMethod("IsOptionOn",
@@ -43,7 +41,6 @@ namespace HarvestToolUproot.Components
             Game.Instance.Subscribe(2015652040, OnDisableOverlay);
             Game.Instance.Subscribe(1983128072, OnRefresh);
 
-            // 订阅 Uprootable 状态变化
             Subscribe(-216549700, OnUprootComplete);
             Subscribe(1198393204, OnUprootCancelled);
         }
@@ -70,8 +67,10 @@ namespace HarvestToolUproot.Components
             }
             else
             {
+                // 非 Harvest Overlay：隐藏拔除图标，恢复收获图标
                 if (iconRect != null)
                     iconRect.gameObject.SetActive(false);
+                RestoreHarvestIcon();
             }
         }
 
@@ -79,6 +78,7 @@ namespace HarvestToolUproot.Components
         {
             if (iconRect != null)
                 iconRect.gameObject.SetActive(false);
+            RestoreHarvestIcon();
         }
 
         private void OnRefresh(object data) => Refresh();
@@ -117,36 +117,40 @@ namespace HarvestToolUproot.Components
             }
         }
 
+        private void RestoreHarvestIcon()
+        {
+            if (harvestDesignatable != null && harvestDesignatable.HarvestWhenReadyOverlayIcon != null)
+            {
+                bool harvestShouldShow = harvestDesignatable.HarvestWhenReady;
+                harvestDesignatable.HarvestWhenReadyOverlayIcon.gameObject.SetActive(harvestShouldShow);
+            }
+        }
+
         public void Refresh()
         {
-            // 检查植物是否被标记拔除
+            // 检查 HarvestTool 是否处于拔除模式
+            bool isUprootMode = false;
+            if (HarvestTool.Instance != null && isOptionOnMethod != null)
+            {
+                isUprootMode = (bool)isOptionOnMethod.Invoke(HarvestTool.Instance, new object[] { "UPROOT" });
+            }
+
             bool isMarkedForUproot = uprootable != null && uprootable.IsMarkedForUproot;
 
-            // 如果植物被标记拔除，显示拔除图标，隐藏收获图标
-            if (isMarkedForUproot)
-            {
-                // 显示拔除图标
-                if (iconRect != null)
-                    iconRect.gameObject.SetActive(true);
+            // 决定是否显示拔除图标
+            bool shouldShowUproot = isUprootMode && isMarkedForUproot;
 
-                // 强制隐藏收获图标
-                if (harvestDesignatable != null && harvestDesignatable.HarvestWhenReadyOverlayIcon != null)
-                {
-                    harvestDesignatable.HarvestWhenReadyOverlayIcon.gameObject.SetActive(false);
-                }
+            // 控制拔除图标
+            if (iconRect != null)
+            {
+                iconRect.gameObject.SetActive(shouldShowUproot);
             }
-            else
-            {
-                // 未标记拔除，隐藏拔除图标
-                if (iconRect != null)
-                    iconRect.gameObject.SetActive(false);
 
-                // 恢复收获图标的正常显示（根据 HarvestWhenReady 状态）
-                if (harvestDesignatable != null && harvestDesignatable.HarvestWhenReadyOverlayIcon != null)
-                {
-                    bool harvestShouldShow = harvestDesignatable.HarvestWhenReady;
-                    harvestDesignatable.HarvestWhenReadyOverlayIcon.gameObject.SetActive(harvestShouldShow);
-                }
+            // 控制收获图标
+            if (harvestDesignatable != null && harvestDesignatable.HarvestWhenReadyOverlayIcon != null)
+            {
+                bool harvestShouldShow = !shouldShowUproot && harvestDesignatable.HarvestWhenReady;
+                harvestDesignatable.HarvestWhenReadyOverlayIcon.gameObject.SetActive(harvestShouldShow);
             }
         }
     }

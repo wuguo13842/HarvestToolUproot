@@ -72,6 +72,7 @@
   <ItemGroup>
     <Compile Include="Components\UprootOverlayIcon.cs" />
     <Compile Include="Mod.cs" />
+    <Compile Include="Patches\HarvestDesignatablePatch.cs" />
     <Compile Include="Patches\HarvestToolPatch.cs" />
     <Compile Include="Patches\UprootableOverlayPatch.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

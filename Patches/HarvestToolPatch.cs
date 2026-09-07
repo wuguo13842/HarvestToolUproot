@@ -42,8 +42,34 @@ namespace HarvestToolUproot.Patches
             if (uprootable != null && uprootable.CanUproot())
             {
                 uprootable.MarkForUproot(true);
-                // 立即刷新这个植物的图标
                 var icon = uprootable.GetComponent<UprootOverlayIcon>();
+                if (icon != null)
+                    icon.Refresh();
+            }
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch("OnActivateTool")]
+        public static void OnActivateTool_Postfix(HarvestTool __instance)
+        {
+            GameScheduler.Instance.Schedule("RefreshAllUprootIcons", 0f, (obj) =>
+            {
+                foreach (var item in global::Components.Uprootables.Items)
+                {
+                    var icon = item.GetComponent<UprootOverlayIcon>();
+                    if (icon != null)
+                        icon.Refresh();
+                }
+            }, null);
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch("OnDeactivateTool")]
+        public static void OnDeactivateTool_Postfix(HarvestTool __instance)
+        {
+            foreach (var item in global::Components.Uprootables.Items)
+            {
+                var icon = item.GetComponent<UprootOverlayIcon>();
                 if (icon != null)
                     icon.Refresh();
             }
