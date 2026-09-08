@@ -9,12 +9,12 @@ namespace HarvestToolUproot.Patches
     {
         private static Sprite originalHarvestSprite;
         private static Sprite uprootSprite;
+        private static Color uprootColor;
 
         private static void LoadSprites()
         {
             if (originalHarvestSprite == null)
             {
-                // 直接从预制体获取原始 Sprite
                 var prefab = Assets.UIPrefabs.HarvestWhenReadyOverlayIcon;
                 if (prefab != null)
                 {
@@ -28,7 +28,10 @@ namespace HarvestToolUproot.Patches
             {
                 var statusItem = Db.Get().MiscStatusItems.PendingUproot;
                 if (statusItem != null && statusItem.sprite != null)
+                {
                     uprootSprite = statusItem.sprite.sprite;
+                    uprootColor = statusItem.sprite.color; // 黑色
+                }
             }
         }
 
@@ -53,7 +56,15 @@ namespace HarvestToolUproot.Patches
                 foreach (var img in images)
                 {
                     img.sprite = uprootSprite;
-                    img.color = Color.white;
+                    img.color = uprootColor; // 黑色
+
+                    // 添加白色描边
+                    var outline = img.gameObject.GetComponent<Outline>();
+                    if (outline == null)
+                        outline = img.gameObject.AddComponent<Outline>();
+                    outline.effectColor = Color.white;
+                    outline.effectDistance = new Vector2(1, -1);
+
                     img.gameObject.SetActive(true);
                 }
                 icon.gameObject.SetActive(true);
@@ -62,7 +73,12 @@ namespace HarvestToolUproot.Patches
             {
                 foreach (var img in images)
                 {
+                    // 恢复原始收获图标
                     img.sprite = originalHarvestSprite;
+                    // 移除描边
+                    var outline = img.gameObject.GetComponent<Outline>();
+                    if (outline != null)
+                        Object.Destroy(outline);
                 }
             }
         }
