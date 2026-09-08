@@ -1,23 +1,25 @@
 ﻿using HarmonyLib;
+using System;
 using UnityEngine;
-using System.Reflection;
 
 namespace HarvestToolUproot.Patches
 {
     [HarmonyPatch(typeof(HarvestTool))]
     public static class HarvestToolPatch
     {
-        // 缓存 RefreshOverlayIcon 方法
-        private static MethodInfo refreshOverlayIconMethod;
+        // 缓存修改后的选项数组
+        private static ToolParameterMenu.ToggleData[] _cachedOptions;
+        private static readonly int UPROOT_INDEX = 2;
+        private static readonly int CANCEL_UPROOT_INDEX = 3;
 
-        private static void RefreshIcon(HarvestDesignatable hd)
+        // 缓存 RefreshOverlayIcon 委托（注意签名：void RefreshOverlayIcon(object)）
+        internal static readonly Action<HarvestDesignatable, object> _refreshIcon;
+
+        static HarvestToolPatch()
         {
-            if (hd == null) return;
-            if (refreshOverlayIconMethod == null)
-            {
-                refreshOverlayIconMethod = AccessTools.Method(typeof(HarvestDesignatable), "RefreshOverlayIcon");
-            }
-            refreshOverlayIconMethod?.Invoke(hd, new object[] { null });
+            var refreshMethod = AccessTools.Method(typeof(HarvestDesignatable), "RefreshOverlayIcon");
+            _refreshIcon = (Action<HarvestDesignatable, object>)Delegate.CreateDelegate(
+                typeof(Action<HarvestDesignatable, object>), refreshMethod);
         }
 
         [HarmonyPostfix]
@@ -26,35 +28,21 @@ namespace HarvestToolUproot.Patches
         {
             var optionsField = AccessTools.Field(typeof(HarvestTool), "options");
             var original = (ToolParameterMenu.ToggleData[])optionsField.GetValue(__instance);
-            
-            // 原有两个选项 + 新增两个 = 4 个
             var newOptions = new ToolParameterMenu.ToggleData[original.Length + 2];
-            System.Array.Copy(original, newOptions, original.Length);
-            
-            newOptions[newOptions.Length - 2] = new ToolParameterMenu.ToggleData(
-                "UPROOT",
-                ToolParameterMenu.ToggleState.Off,
-                false
-            );
-            newOptions[newOptions.Length - 1] = new ToolParameterMenu.ToggleData(
-                "CANCEL_UPROOT",      // 新增：取消拔除
-                ToolParameterMenu.ToggleState.Off,
-                false
-            );
+            Array.Copy(original, newOptions, original.Length);
+            newOptions[UPROOT_INDEX] = new ToolParameterMenu.ToggleData("UPROOT", ToolParameterMenu.ToggleState.Off, false);
+            newOptions[CANCEL_UPROOT_INDEX] = new ToolParameterMenu.ToggleData("CANCEL_UPROOT", ToolParameterMenu.ToggleState.Off, false);
             optionsField.SetValue(__instance, newOptions);
+            _cachedOptions = newOptions;
         }
 
         [HarmonyPostfix]
         [HarmonyPatch("OnDragTool")]
         public static void OnDragTool_Postfix(HarvestTool __instance, int cell, int distFromOrigin)
         {
-            var isOptionOnMethod = AccessTools.Method(typeof(HarvestTool), "IsOptionOn");
-            
-            // 检查是否选中了 "UPROOT" 或 "CANCEL_UPROOT"
-            bool isUprootMode = (bool)isOptionOnMethod.Invoke(__instance, new object[] { "UPROOT" });
-            bool isCancelMode = (bool)isOptionOnMethod.Invoke(__instance, new object[] { "CANCEL_UPROOT" });
-            
-            // 如果两个都没选中，不执行任何操作
+            bool isUprootMode = _cachedOptions[UPROOT_INDEX].IsOn;
+            bool isCancelMode = _cachedOptions[CANCEL_UPROOT_INDEX].IsOn;
+
             if (!isUprootMode && !isCancelMode) return;
             if (!Grid.IsValidCell(cell)) return;
 
@@ -62,27 +50,22 @@ namespace HarvestToolUproot.Patches
             var layers = Grid.ObjectLayers;
             if (layers.Length > 1 && layers[1] != null && layers[1].TryGetValue(cell, out go)) { }
             else if (layers.Length > 5 && layers[5] != null && layers[5].TryGetValue(cell, out go)) { }
-
             if (go == null) return;
 
             Uprootable uprootable = go.GetComponent<Uprootable>();
             if (uprootable == null) return;
 
-            // 根据模式执行不同操作
             if (isUprootMode && uprootable.CanUproot())
             {
                 uprootable.MarkForUproot(true);
-                var harvestDesignatable = go.GetComponent<HarvestDesignatable>();
-                if (harvestDesignatable != null)
-                    RefreshIcon(harvestDesignatable);
+                var hd = go.GetComponent<HarvestDesignatable>();
+                if (hd != null) _refreshIcon(hd, null);   // 注意传 null
             }
             else if (isCancelMode)
             {
-                // 取消拔除：调用 ForceCancelUproot
                 uprootable.ForceCancelUproot(null);
-                var harvestDesignatable = go.GetComponent<HarvestDesignatable>();
-                if (harvestDesignatable != null)
-                    RefreshIcon(harvestDesignatable);
+                var hd = go.GetComponent<HarvestDesignatable>();
+                if (hd != null) _refreshIcon(hd, null);
             }
         }
 
@@ -93,9 +76,7 @@ namespace HarvestToolUproot.Patches
             GameScheduler.Instance.Schedule("RefreshAllHarvestIcons", 0f, (obj) =>
             {
                 foreach (var item in Components.HarvestDesignatables.Items)
-                {
-                    RefreshIcon(item);
-                }
+                    _refreshIcon(item, null);
             }, null);
         }
 
@@ -104,9 +85,7 @@ namespace HarvestToolUproot.Patches
         public static void OnDeactivateTool_Postfix(HarvestTool __instance)
         {
             foreach (var item in Components.HarvestDesignatables.Items)
-            {
-                RefreshIcon(item);
-            }
+                _refreshIcon(item, null);
         }
     }
 }
