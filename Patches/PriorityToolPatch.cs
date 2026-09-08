@@ -1,5 +1,7 @@
 ﻿using HarmonyLib;
 using System;
+using System.Collections.Generic;
+using System.Reflection;
 using UnityEngine;
 
 namespace YourModName.Patches
@@ -7,116 +9,85 @@ namespace YourModName.Patches
     [HarmonyPatch(typeof(PrioritizeTool))]
     public static class PrioritizeToolPatch
     {
-        // ---------- 1. 添加“农业”选项到菜单 ----------
-        [HarmonyPrefix]
-        [HarmonyPatch("GetDefaultFilters")]
-        public static bool GetDefaultFilters_Prefix(PrioritizeTool __instance, out ToolParameterMenu.ToggleData[] filters)
+        private const string AgricultureFilter = "AGRICULTURE";
+
+        // 缓存 currentFilters 字段（基类 FilteredDragTool 的 protected 字段）
+        private static readonly FieldInfo _currentFiltersField;
+
+        static PrioritizeToolPatch()
         {
-            filters = new ToolParameterMenu.ToggleData[]
-            {
-                new ToolParameterMenu.ToggleData(ToolParameterMenu.FILTERLAYERS.ALL, ToolParameterMenu.ToggleState.On, false),
-                new ToolParameterMenu.ToggleData(ToolParameterMenu.FILTERLAYERS.CONSTRUCTION, ToolParameterMenu.ToggleState.Off, false),
-                new ToolParameterMenu.ToggleData(ToolParameterMenu.FILTERLAYERS.DIG, ToolParameterMenu.ToggleState.Off, false),
-                new ToolParameterMenu.ToggleData(ToolParameterMenu.FILTERLAYERS.CLEAN, ToolParameterMenu.ToggleState.Off, false),
-                new ToolParameterMenu.ToggleData(ToolParameterMenu.FILTERLAYERS.OPERATE, ToolParameterMenu.ToggleState.Off, false),
-                new ToolParameterMenu.ToggleData("AGRICULTURE", ToolParameterMenu.ToggleState.Off, false)
-            };
-            return false;
+            _currentFiltersField = AccessTools.Field(typeof(FilteredDragTool), "currentFilters");
+            if (_currentFiltersField == null)
+                throw new Exception("Field 'currentFilters' not found in FilteredDragTool.");
         }
 
-        // ---------- 2. 修改 GetFilterLayerFromGameObject，让植物返回“AGRICULTURE”层 ----------
+        // 辅助方法：读取 currentFilters
+        private static ToolParameterMenu.ToggleData[] GetFilters(FilteredDragTool tool)
+        {
+            return (ToolParameterMenu.ToggleData[])_currentFiltersField.GetValue(tool);
+        }
+
+        // 辅助方法：写入 currentFilters
+        private static void SetFilters(FilteredDragTool tool, ToolParameterMenu.ToggleData[] filters)
+        {
+            _currentFiltersField.SetValue(tool, filters);
+        }
+
+        // ---------- 1. 在工具激活时追加“AGRICULTURE”选项 ----------
+        [HarmonyPostfix]
+        [HarmonyPatch("OnActivateTool")]
+        public static void OnActivateTool_Postfix(PrioritizeTool __instance)
+        {
+            var filters = GetFilters(__instance);
+
+            // 检查是否已存在，避免重复
+            foreach (var t in filters)
+                if (t.name == AgricultureFilter) return;
+
+            // 追加新选项
+            var list = new List<ToolParameterMenu.ToggleData>(filters);
+            list.Add(new ToolParameterMenu.ToggleData(AgricultureFilter, ToolParameterMenu.ToggleState.Off, false));
+            var newFilters = list.ToArray();
+
+            // 更新 currentFilters
+            SetFilters(__instance, newFilters);
+
+            // 刷新菜单，让新增选项立即显示
+            ToolMenu.Instance.toolParameterMenu.PopulateMenu(newFilters);
+        }
+
+        // ---------- 2. 植物在农业模式激活时返回 AGRICULTURE 层 ----------
         [HarmonyPrefix]
         [HarmonyPatch("GetFilterLayerFromGameObject")]
         public static bool GetFilterLayerFromGameObject_Prefix(PrioritizeTool __instance, GameObject input, ref string __result)
         {
+            if (input == null) return true;
+
             // 检查农业模式是否开启
-            bool isAgricultureMode = __instance.IsActiveLayer("AGRICULTURE");
-            
-            // 如果农业模式开启，且目标是植物，返回“AGRICULTURE”层
-            if (isAgricultureMode && IsPlant(input))
+            var filters = GetFilters(__instance);
+            bool agricultureOn = false;
+            foreach (var toggle in filters)
+                if (toggle.name == AgricultureFilter && toggle.IsOn) { agricultureOn = true; break; }
+
+            if (agricultureOn && IsPlant(input))
             {
-                __result = "AGRICULTURE";
+                __result = AgricultureFilter;
                 return false; // 跳过原方法
             }
-            
-            // 否则执行原逻辑
-            return true;
+
+            return true; // 继续原逻辑
         }
 
-        // ---------- 3. 修改 OnDragTool，农业模式下只处理植物 ----------
-        [HarmonyPrefix]
-        [HarmonyPatch("OnDragTool")]
-        public static bool OnDragTool_Prefix(PrioritizeTool __instance, int cell, int distFromOrigin)
-        {
-            bool isAgricultureMode = __instance.IsActiveLayer("AGRICULTURE");
-            if (!isAgricultureMode) return true;
-
-            PrioritySetting lastSelectedPriority = ToolMenu.Instance.PriorityScreen.GetLastSelectedPriority();
-            int count = 0;
-
-            for (int i = 0; i < 45; i++)
-            {
-                GameObject go = Grid.Objects[cell, i];
-                if (go == null) continue;
-
-                Pickupable pickupable = go.GetComponent<Pickupable>();
-                if (pickupable != null)
-                {
-                    ObjectLayerListItem item = pickupable.objectLayerListItem;
-                    while (item != null)
-                    {
-                        GameObject itemGO = item.gameObject;
-                        item = item.nextItem;
-                        if (itemGO != null && itemGO.GetComponent<MinionIdentity>() == null)
-                        {
-                            if (IsPlant(itemGO) && TrySetPriority(itemGO, lastSelectedPriority))
-                                count++;
-                        }
-                    }
-                }
-                else
-                {
-                    if (IsPlant(go) && TrySetPriority(go, lastSelectedPriority))
-                        count++;
-                }
-            }
-
-            if (count > 0)
-                PriorityScreen.PlayPriorityConfirmSound(lastSelectedPriority);
-            
-            return false;
-        }
-
-        private static bool TrySetPriority(GameObject go, PrioritySetting priority)
-        {
-            Prioritizable p = go.GetComponent<Prioritizable>();
-            if (p == null || !p.showIcon || !p.IsPrioritizable()) return false;
-            p.SetMasterPriority(priority);
-            return true;
-        }
-
-        // 判断是否为植物（供多个补丁共享）
-        internal static bool IsPlant(GameObject go)
+        // 判断是否为植物（完全基于 GameTags）
+        private static bool IsPlant(GameObject go)
         {
             if (go == null) return false;
-
-            KPrefabID kpid = go.GetComponent<KPrefabID>();
-            if (kpid != null)
-            {
-                if (kpid.HasTag(GameTags.Plant) ||
-                    kpid.HasTag(GameTags.Seed) ||
-                    kpid.HasTag(GameTags.CropSeed) ||
-                    kpid.HasTag(GameTags.Harvestable))
-                    return true;
-            }
-
-            string name = go.name.ToLower();
-            if (name.Contains("plant") || name.Contains("crop") ||
-                name.Contains("seed") || name.Contains("growing") ||
-                name.Contains("sprout") || name.Contains("vine"))
-                return true;
-
-            return false;
+            var kpid = go.GetComponent<KPrefabID>();
+            if (kpid == null) return false;
+            return kpid.HasTag(GameTags.Plant) ||
+                   kpid.HasTag(GameTags.Seed) ||
+                   kpid.HasTag(GameTags.CropSeed) ||
+                   kpid.HasTag(GameTags.Harvestable);
         }
     }
 }
