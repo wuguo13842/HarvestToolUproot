@@ -9,7 +9,6 @@ namespace HarvestToolUproot.Patches
     {
         private static Sprite originalHarvestSprite;
         private static Sprite uprootSprite;
-        private static Color uprootColor;
 
         private static void LoadSprites()
         {
@@ -26,11 +25,14 @@ namespace HarvestToolUproot.Patches
 
             if (uprootSprite == null)
             {
-                var statusItem = Db.Get().MiscStatusItems.PendingUproot;
-                if (statusItem != null && statusItem.sprite != null)
+                // 从 Assets.Sprites 获取（已在 BeforeDbInit 中添加）
+                uprootSprite = Assets.GetSprite("uproot_icon");
+                if (uprootSprite == null)
                 {
-                    uprootSprite = statusItem.sprite.sprite;
-                    uprootColor = statusItem.sprite.color; // 黑色
+                    // 回退到 PendingUproot
+                    var statusItem = Db.Get().MiscStatusItems.PendingUproot;
+                    if (statusItem != null && statusItem.sprite != null)
+                        uprootSprite = statusItem.sprite.sprite;
                 }
             }
         }
@@ -48,23 +50,15 @@ namespace HarvestToolUproot.Patches
             LoadSprites();
             if (originalHarvestSprite == null || uprootSprite == null) return;
 
-            bool marked = uprootable.IsMarkedForUproot;
             var images = icon.GetComponentsInChildren<Image>(true);
+            bool marked = uprootable.IsMarkedForUproot;
 
             if (marked)
             {
                 foreach (var img in images)
                 {
                     img.sprite = uprootSprite;
-                    img.color = uprootColor; // 黑色
-
-                    // 添加白色描边
-                    var outline = img.gameObject.GetComponent<Outline>();
-                    if (outline == null)
-                        outline = img.gameObject.AddComponent<Outline>();
-                    outline.effectColor = Color.white;
-                    outline.effectDistance = new Vector2(1, -1);
-
+                    img.color = Color.white;
                     img.gameObject.SetActive(true);
                 }
                 icon.gameObject.SetActive(true);
@@ -73,12 +67,7 @@ namespace HarvestToolUproot.Patches
             {
                 foreach (var img in images)
                 {
-                    // 恢复原始收获图标
                     img.sprite = originalHarvestSprite;
-                    // 移除描边
-                    var outline = img.gameObject.GetComponent<Outline>();
-                    if (outline != null)
-                        Object.Destroy(outline);
                 }
             }
         }
