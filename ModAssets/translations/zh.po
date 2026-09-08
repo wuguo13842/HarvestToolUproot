@@ -18,3 +18,11 @@ msgstr "拔除"
 msgctxt "STRINGS.UI.TOOLS.FILTERLAYERS.UPROOT.TOOLTIP"
 msgid "Mark selected plants for uprooting"
 msgstr "将选中的植物标记为拔除状态"
+
+msgctxt "STRINGS.UI.TOOLS.FILTERLAYERS.CANCEL_UPROOT.NAME"
+msgid "Cancel Uproot"
+msgstr "取消拔除"
+
+msgctxt "STRINGS.UI.TOOLS.FILTERLAYERS.CANCEL_UPROOT.TOOLTIP"
+msgid "Cancel uproot marking on selected plants"
+msgstr "取消选中植物的拔除标记"

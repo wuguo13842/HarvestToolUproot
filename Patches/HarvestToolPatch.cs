@@ -1,6 +1,6 @@
 ﻿using HarmonyLib;
 using UnityEngine;
-using System.Reflection;  // 添加这行
+using System.Reflection;
 
 namespace HarvestToolUproot.Patches
 {
@@ -26,10 +26,18 @@ namespace HarvestToolUproot.Patches
         {
             var optionsField = AccessTools.Field(typeof(HarvestTool), "options");
             var original = (ToolParameterMenu.ToggleData[])optionsField.GetValue(__instance);
-            var newOptions = new ToolParameterMenu.ToggleData[original.Length + 1];
+            
+            // 原有两个选项 + 新增两个 = 4 个
+            var newOptions = new ToolParameterMenu.ToggleData[original.Length + 2];
             System.Array.Copy(original, newOptions, original.Length);
-            newOptions[newOptions.Length - 1] = new ToolParameterMenu.ToggleData(
+            
+            newOptions[newOptions.Length - 2] = new ToolParameterMenu.ToggleData(
                 "UPROOT",
+                ToolParameterMenu.ToggleState.Off,
+                false
+            );
+            newOptions[newOptions.Length - 1] = new ToolParameterMenu.ToggleData(
+                "CANCEL_UPROOT",      // 新增：取消拔除
                 ToolParameterMenu.ToggleState.Off,
                 false
             );
@@ -41,7 +49,13 @@ namespace HarvestToolUproot.Patches
         public static void OnDragTool_Postfix(HarvestTool __instance, int cell, int distFromOrigin)
         {
             var isOptionOnMethod = AccessTools.Method(typeof(HarvestTool), "IsOptionOn");
-            if (!(bool)isOptionOnMethod.Invoke(__instance, new object[] { "UPROOT" })) return;
+            
+            // 检查是否选中了 "UPROOT" 或 "CANCEL_UPROOT"
+            bool isUprootMode = (bool)isOptionOnMethod.Invoke(__instance, new object[] { "UPROOT" });
+            bool isCancelMode = (bool)isOptionOnMethod.Invoke(__instance, new object[] { "CANCEL_UPROOT" });
+            
+            // 如果两个都没选中，不执行任何操作
+            if (!isUprootMode && !isCancelMode) return;
             if (!Grid.IsValidCell(cell)) return;
 
             GameObject go = null;
@@ -52,12 +66,23 @@ namespace HarvestToolUproot.Patches
             if (go == null) return;
 
             Uprootable uprootable = go.GetComponent<Uprootable>();
-            if (uprootable != null && uprootable.CanUproot())
+            if (uprootable == null) return;
+
+            // 根据模式执行不同操作
+            if (isUprootMode && uprootable.CanUproot())
             {
                 uprootable.MarkForUproot(true);
                 var harvestDesignatable = go.GetComponent<HarvestDesignatable>();
                 if (harvestDesignatable != null)
-                    RefreshIcon(harvestDesignatable);  // 使用反射调用
+                    RefreshIcon(harvestDesignatable);
+            }
+            else if (isCancelMode)
+            {
+                // 取消拔除：调用 ForceCancelUproot
+                uprootable.ForceCancelUproot(null);
+                var harvestDesignatable = go.GetComponent<HarvestDesignatable>();
+                if (harvestDesignatable != null)
+                    RefreshIcon(harvestDesignatable);
             }
         }
 
