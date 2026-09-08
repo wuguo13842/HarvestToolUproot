@@ -26,3 +26,11 @@ msgstr "取消拔除"
 msgctxt "STRINGS.UI.TOOLS.FILTERLAYERS.CANCEL_UPROOT.TOOLTIP"
 msgid "Cancel uproot marking on selected plants"
 msgstr "取消选中植物的拔除标记"
+
+msgctxt "STRINGS.UI.TOOLS.FILTERLAYERS.AGRICULTURE.NAME"
+msgid "Agriculture"
+msgstr "农业"
+
+msgctxt "STRINGS.UI.TOOLS.FILTERLAYERS.AGRICULTURE.TOOLTIP"
+msgid "Show only agriculture buildings"
+msgstr "仅显示农业建筑"

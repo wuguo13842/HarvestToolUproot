@@ -18,6 +18,13 @@
                     public static LocString NAME = "Cancel Uproot";
                     public static LocString TOOLTIP = "Cancel uproot marking on selected plants";
                 }
+				
+                // ---------- 新增：农业 ----------
+                public static class AGRICULTURE
+                {
+                    public static LocString NAME = "Agriculture";
+                    public static LocString TOOLTIP = "Show only agriculture buildings";
+                }
             }
         }
     }

@@ -73,6 +73,7 @@
     <Compile Include="Mod.cs" />
     <Compile Include="Patches\HarvestDesignatablePatch.cs" />
     <Compile Include="Patches\HarvestToolPatch.cs" />
+    <Compile Include="Patches\PriorityToolPatch.cs" />
     <Compile Include="Patches\UprootablePatch.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <!-- 如果有 STRINGS 类 -->
