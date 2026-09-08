@@ -6,7 +6,7 @@ using PeterHan.PLib.PatchManager;
 using System.Reflection;
 using UnityEngine;
 
-namespace HarvestToolUproot
+namespace AgriHarvestPriority
 {
     public class Mod : UserMod2
     {

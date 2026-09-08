@@ -2,7 +2,7 @@
 using System;
 using UnityEngine;
 
-namespace HarvestToolUproot.Patches
+namespace AgriHarvestPriority.Patches
 {
     [HarmonyPatch(typeof(HarvestTool))]
     public static class HarvestToolPatch

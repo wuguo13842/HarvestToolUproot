@@ -1,6 +1,6 @@
 ﻿using HarmonyLib;
 
-namespace HarvestToolUproot.Patches
+namespace AgriHarvestPriority.Patches
 {
     [HarmonyPatch(typeof(Uprootable))]
     public static class UprootablePatch

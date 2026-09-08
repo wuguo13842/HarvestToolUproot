@@ -10,8 +10,8 @@
     <ProjectGuid>{BB0A9A37-A833-46D1-8E16-639683A71BEF}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>HarvestToolUproot</RootNamespace>
-    <AssemblyName>HarvestToolUproot</AssemblyName>
+    <RootNamespace>AgriHarvestPriority</RootNamespace>
+    <AssemblyName>AgriHarvestPriority</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
@@ -93,8 +93,8 @@
     <MinimumSupportedBuild>744825</MinimumSupportedBuild>
     <APIVersion>2</APIVersion>
     <SupportedContent>ALL</SupportedContent>
-    <ModStaticID>HarvestToolUproot</ModStaticID>
-    <ModTitle>收获工具 - 批量拔除</ModTitle>
+    <ModStaticID>AgriHarvestPriority</ModStaticID>
+    <ModTitle>农业工具-优先度与收获</ModTitle>
     <ModDescription>在收获工具中添加“拔除”选项，可批量标记植物拔除</ModDescription>
     <ModVersion>1.0.0.0</ModVersion>
   </PropertyGroup>
