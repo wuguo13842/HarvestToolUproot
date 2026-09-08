@@ -112,8 +112,6 @@
     <!-- 复制 翻译文件 -->
     <Copy SourceFiles="@(TranslationFiles)" DestinationFolder="$(ModFolder)\translations\" />
     <!-- 复制预览图（如果有） -->
-    <!--
-    <Copy SourceFiles="ModAssets/preview.png" DestinationFolder="$(ModFolder)" />
-    -->
+    <Copy SourceFiles="ModAssets/assets/preview.png" DestinationFolder="$(ModFolder)" />
   </Target>
 </Project>
