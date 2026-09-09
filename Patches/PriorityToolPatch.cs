@@ -84,10 +84,29 @@ namespace AgriHarvestPriority.Patches
             if (go == null) return false;
             var kpid = go.GetComponent<KPrefabID>();
             if (kpid == null) return false;
-            return kpid.HasTag(GameTags.Plant) ||
-                   kpid.HasTag(GameTags.Seed) ||
-                   kpid.HasTag(GameTags.CropSeed) ||
-                   kpid.HasTag(GameTags.Harvestable);
+
+            // 🌱 植物及种子
+            if (kpid.HasTag(GameTags.Plant) ||
+                kpid.HasTag(GameTags.Seed) ||
+                kpid.HasTag(GameTags.CropSeed) ||
+                kpid.HasTag(GameTags.Harvestable))
+                return true;
+
+            // 🏗️ 农业建筑（Codex 分类标签 + Farm 标签）
+            if (kpid.HasTag(GameTags.CodexCategories.FarmBuilding) ||
+                kpid.HasTag(GameTags.Farm))
+                return true;
+
+            // 🪴 种植容器（PlantablePlot 组件）- 土培砖、液培砖、种植箱等
+            if (go.GetComponent<PlantablePlot>() != null)
+                return true;
+
+            // 🏺 花盆（名称包含 Pot 或 Vase）- FlowerPot、WallFlowerPot、FlowerVase
+            string name = go.name;
+            if (name.Contains("Pot") || name.Contains("Vase"))
+                return true;
+
+            return false;
         }
     }
 }
