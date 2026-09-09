@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
 
-namespace YourModName.Patches
+namespace AgriHarvestPriority.Patches
 {
     [HarmonyPatch(typeof(PrioritizeTool))]
     public static class PrioritizeToolPatch
