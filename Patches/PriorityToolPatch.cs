@@ -33,43 +33,68 @@ namespace AgriHarvestPriority.Patches
             _currentFiltersField.SetValue(tool, filters);
         }
 
-        // ---------- 1. 在工具激活时追加“AGRICULTURE”选项 ----------
+        // ---------- 1. 在工具激活时追加“AGRICULTURE”选项 + 补齐植物 refCount ----------
         [HarmonyPostfix]
         [HarmonyPatch("OnActivateTool")]
         public static void OnActivateTool_Postfix(PrioritizeTool __instance)
         {
-            var filters = GetFilters(__instance);
+            // ---- 1a. 追加农业选项（独立 try/catch，避免异常中断后续逻辑） ----
+            try
+            {
+                var filters = GetFilters(__instance);
 
-            // 检查是否已存在，避免重复
-            foreach (var t in filters)
-                if (t.name == AgricultureFilter) return;
+                // 检查是否已存在，避免重复
+                bool hasFilter = false;
+                if (filters != null)
+                {
+                    foreach (var t in filters)
+                        if (t.name == AgricultureFilter) { hasFilter = true; break; }
+                }
 
-            // 追加新选项
-            var list = new List<ToolParameterMenu.ToggleData>(filters);
-            list.Add(new ToolParameterMenu.ToggleData(AgricultureFilter, ToolParameterMenu.ToggleState.Off, false));
-            var newFilters = list.ToArray();
+                if (!hasFilter)
+                {
+                    // 追加新选项
+                    var list = new List<ToolParameterMenu.ToggleData>(
+                        filters ?? new ToolParameterMenu.ToggleData[0]);
+                    list.Add(new ToolParameterMenu.ToggleData(AgricultureFilter, ToolParameterMenu.ToggleState.Off, false));
+                    var newFilters = list.ToArray();
 
-            // 更新 currentFilters
-            SetFilters(__instance, newFilters);
+                    // 更新 currentFilters
+                    SetFilters(__instance, newFilters);
 
-            // 刷新菜单，让新增选项立即显示
-            ToolMenu.Instance.toolParameterMenu.PopulateMenu(newFilters);
+                    // 刷新菜单，让新增选项立即显示
+                    if (ToolMenu.Instance != null && ToolMenu.Instance.toolParameterMenu != null)
+                        ToolMenu.Instance.toolParameterMenu.PopulateMenu(newFilters);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[AgriHarvestPriority] Add filter failed: {e}");
+            }
+
+            // ---- 1b. ★ 核心修复：为所有植物补齐 Prioritizable 的 refCount ----
+            try
+            {
+                EnsureAllPlantsPrioritizable();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[AgriHarvestPriority] EnsureAllPlantsPrioritizable failed: {e}");
+            }
         }
 
-        // ---------- 2. 植物在农业模式激活时返回 AGRICULTURE 层 ----------
+        // ---------- 2. 植物永远返回 AGRICULTURE 层 ----------
+        // 说明：原版 GetFilterLayerFromGameObject 对植物返回 OPERATE（职务），
+        //       导致植物出现在"职务"筛选里。这里拦截，让植物永远归入农业层，
+        //       从而不在"职务"下显示（只在「全部」或「农业」下显示）。
         [HarmonyPrefix]
         [HarmonyPatch("GetFilterLayerFromGameObject")]
         public static bool GetFilterLayerFromGameObject_Prefix(PrioritizeTool __instance, GameObject input, ref string __result)
         {
             if (input == null) return true;
 
-            // 检查农业模式是否开启
-            var filters = GetFilters(__instance);
-            bool agricultureOn = false;
-            foreach (var toggle in filters)
-                if (toggle.name == AgricultureFilter && toggle.IsOn) { agricultureOn = true; break; }
-
-            if (agricultureOn && IsPlant(input))
+            // 植物：永远返回农业层，避免落入原版的 OPERATE（职务）
+            if (IsPlant(input))
             {
                 __result = AgricultureFilter;
                 return false; // 跳过原方法
@@ -78,33 +103,97 @@ namespace AgriHarvestPriority.Patches
             return true; // 继续原逻辑
         }
 
-        // 判断是否为植物（完全基于 GameTags）
+        // ---------- 3. 拖拽时也顺手补齐（兜底保险） ----------
+        [HarmonyPrefix]
+        [HarmonyPatch("TryPrioritizeGameObject")]
+        public static void TryPrioritizeGameObject_Prefix(GameObject target)
+        {
+            if (IsPlant(target))
+                EnsurePlantPrioritizable(target);
+        }
+
+        // ---------- 4. 收集所有植物并补齐 refCount ----------
+        private static void EnsureAllPlantsPrioritizable()
+        {
+            var plantSet = new HashSet<GameObject>();
+
+            // 从 HarvestDesignatable 收集（所有可收获的植物）
+            if (Components.HarvestDesignatables != null)
+            {
+                foreach (var hd in Components.HarvestDesignatables.Items)
+                    if (hd != null && hd.gameObject != null) plantSet.Add(hd.gameObject);
+            }
+
+            // 从 Growing 收集（幼苗、未成熟植物，可能还没有 HarvestDesignatable）
+            var gs = UnityEngine.Object.FindObjectsOfType<Growing>();
+            if (gs != null)
+            {
+                foreach (var g in gs)
+                    if (g != null && g.gameObject != null) plantSet.Add(g.gameObject);
+            }
+
+            int added = 0, refFixed = 0;
+            foreach (var go in plantSet)
+            {
+                var p = go.GetComponent<Prioritizable>();
+                bool hadComponent = p != null;
+                bool changed = EnsurePlantPrioritizable(go);
+                if (!hadComponent && changed) added++;
+                else if (hadComponent && changed) refFixed++;
+            }
+
+            Debug.Log($"[AgriHarvestPriority] plants={plantSet.Count}, newComponents={added}, refCountFixed={refFixed}");
+        }
+
+        // ---------- 5. 单个植物补齐逻辑 ----------
+        private static bool EnsurePlantPrioritizable(GameObject go)
+        {
+            if (go == null) return false;
+            try
+            {
+                var p = go.GetComponent<Prioritizable>();
+                if (p == null)
+                {
+                    // 没有组件则动态添加
+                    p = go.AddComponent<Prioritizable>();
+                    p.showIcon = true;
+
+                    // 动态添加的组件需要手动调用 OnSpawn 才注册到分区系统
+                    var onSpawn = AccessTools.Method(typeof(Prioritizable), "OnSpawn");
+                    onSpawn?.Invoke(p, null);
+
+                    if (!p.IsPrioritizable()) p.AddRef();
+                    return true;
+                }
+                else
+                {
+                    bool changed = false;
+                    if (!p.showIcon) { p.showIcon = true; changed = true; }
+
+                    // ★ 关键：即使已有组件，只要 refCount=0 也要补上（这就是种植植物不显示的根源）
+                    if (!p.IsPrioritizable()) { p.AddRef(); changed = true; }
+
+                    return changed;
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[AgriHarvestPriority] {go.name}: {e}");
+                return false;
+            }
+        }
+
+        // ---------- 6. 判断是否为植物（只判断植物本体，不含建筑容器） ----------
         private static bool IsPlant(GameObject go)
         {
             if (go == null) return false;
-            var kpid = go.GetComponent<KPrefabID>();
-            if (kpid == null) return false;
 
-            // 🌱 植物及种子
-            if (kpid.HasTag(GameTags.Plant) ||
-                kpid.HasTag(GameTags.Seed) ||
-                kpid.HasTag(GameTags.CropSeed) ||
-                kpid.HasTag(GameTags.Harvestable))
-                return true;
+            // 🌱 通过组件识别（最可靠）
+            if (go.GetComponent<Growing>() != null) return true;
+            if (go.GetComponent<HarvestDesignatable>() != null) return true;
 
-            // 🏗️ 农业建筑（Codex 分类标签 + Farm 标签）
-            if (kpid.HasTag(GameTags.CodexCategories.FarmBuilding) ||
-                kpid.HasTag(GameTags.Farm))
-                return true;
-
-            // 🪴 种植容器（PlantablePlot 组件）- 土培砖、液培砖、种植箱等
-            if (go.GetComponent<PlantablePlot>() != null)
-                return true;
-
-            // 🏺 花盆（名称包含 Pot 或 Vase）- FlowerPot、WallFlowerPot、FlowerVase
-            string name = go.name;
-            if (name.Contains("Pot") || name.Contains("Vase"))
-                return true;
+            // 🌍 通过对象层识别（所有植物都在 Plants 层）
+            if ((ObjectLayer)go.layer == ObjectLayer.Plants) return true;
 
             return false;
         }
