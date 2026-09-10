@@ -6,20 +6,24 @@ namespace AgriHarvestPriority.Patches
     /// <summary>共享的植物识别与扫描逻辑，避免多处重复。</summary>
     internal static class PlantDetection
     {
-        /// <summary>是否为植物（含种子、幼苗）。</summary>
+        /// <summary>是否为植物（不含散落的种子）。</summary>
         public static bool IsPlant(GameObject go)
         {
             if (go == null) return false;
 
+            // 已种下的植物：有 Growing 组件（幼苗/成熟都包含）
             if (go.GetComponent<Growing>() != null) return true;
+            // 可收获的植物
             if (go.GetComponent<HarvestDesignatable>() != null) return true;
 
+            // 野生植物等：靠标签识别
+            // ★ 注意：不检查 Seed / CropSeed，避免把地上散落的种子也算进来
             var kpid = go.GetComponent<KPrefabID>();
             if (kpid != null)
             {
                 return kpid.HasTag(GameTags.Plant)
-                    || kpid.HasTag(GameTags.Seed)
-                    || kpid.HasTag(GameTags.CropSeed)
+                    // || kpid.HasTag(GameTags.Seed) //不含散落的种子
+                    // || kpid.HasTag(GameTags.CropSeed) //不含散落的种子
                     || kpid.HasTag(GameTags.Harvestable);
             }
             return false;
