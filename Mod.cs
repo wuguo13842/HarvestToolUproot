@@ -12,6 +12,7 @@ namespace AgriHarvestPriority
     public class Mod : UserMod2
     {
         public static Sprite UprootIconSprite { get; private set; }
+		public static Sprite NotUprootIconSprite { get; private set; }  
 
         [PLibMethod(RunAt.BeforeDbInit)]
         internal static void BeforeDbInit()
@@ -27,6 +28,16 @@ namespace AgriHarvestPriority
             if (Assets.Sprites.ContainsKey(UprootIconSprite.name))
                 Assets.Sprites.Remove(UprootIconSprite.name);
             Assets.Sprites.Add(UprootIconSprite.name, UprootIconSprite);
+			
+			// ★ 新增：加载"未拔除"图标
+			NotUprootIconSprite = Utilities.CreateSpriteDxt5(
+				assembly.GetManifestResourceStream(resourcePrefix + "not_uproot_icon.dds"),
+				128, 128
+			);
+			NotUprootIconSprite.name = "not_uproot_icon";
+			if (Assets.Sprites.ContainsKey(NotUprootIconSprite.name))
+				Assets.Sprites.Remove(NotUprootIconSprite.name);
+			Assets.Sprites.Add(NotUprootIconSprite.name, NotUprootIconSprite);
         }
 
         // ★ 新增：每次进入游戏世界（新游戏或读档）时清空 HarvestToolPatch 缓存

@@ -58,19 +58,30 @@ namespace AgriHarvestPriority.Patches
             _cachedOptions = newOptions;
         }
 
-        // ---------- 2. 工具激活时同步缓存 ----------
-        [HarmonyPostfix]
-        [HarmonyPatch("OnActivateTool")]
-        public static void OnActivateTool_Postfix(HarvestTool __instance)
-        {
-            _cachedOptions = (ToolParameterMenu.ToggleData[])_optionsField.GetValue(__instance);
+		// ---------- 2. 工具激活：同步刷新观赏性植物图标 + 异步刷新可收获植物 ----------
+		[HarmonyPostfix]
+		[HarmonyPatch("OnActivateTool")]
+		public static void OnActivateTool_Postfix(HarvestTool __instance)
+		{
+			_cachedOptions = (ToolParameterMenu.ToggleData[])_optionsField.GetValue(__instance);
 
-            GameScheduler.Instance.Schedule("RefreshAllHarvestIcons", 0f, (obj) =>
-            {
-                foreach (var item in Components.HarvestDesignatables.Items)
-                    _refreshIcon(item, null);
-            }, null);
-        }
+			// ★ 同步刷新观赏性植物图标（不走 GameScheduler，避免异步时序问题）
+			try
+			{
+				DecorativePlantIconPatch.RefreshAll();
+			}
+			catch (Exception e)
+			{
+				Debug.LogError($"[AgriHarvestPriority] RefreshAll failed: {e}");
+			}
+
+			// 可收获植物仍走 GameScheduler（保持原版节奏）
+			GameScheduler.Instance.Schedule("RefreshAllHarvestIcons", 0f, (obj) =>
+			{
+				foreach (var item in Components.HarvestDesignatables.Items)
+					_refreshIcon(item, null);
+			}, null);
+		}
 
         // ---------- 3. 拖动时使用缓存（含双重兜底） ----------
         [HarmonyPostfix]
@@ -107,22 +118,33 @@ namespace AgriHarvestPriority.Patches
                 uprootable.MarkForUproot(true);
                 var hd = go.GetComponent<HarvestDesignatable>();
                 if (hd != null) _refreshIcon(hd, null);
+
+                // ★ 刷新观赏性植物图标
+                if (DecorativePlantIconPatch.IsDecorativePlant(go))
+                    DecorativePlantIconPatch.RefreshOne(uprootable);
             }
             else if (isCancelMode)
             {
                 uprootable.ForceCancelUproot(null);
                 var hd = go.GetComponent<HarvestDesignatable>();
                 if (hd != null) _refreshIcon(hd, null);
+
+                // ★ 刷新观赏性植物图标
+                if (DecorativePlantIconPatch.IsDecorativePlant(go))
+                    DecorativePlantIconPatch.RefreshOne(uprootable);
             }
         }
 
-        // ---------- 4. 工具关闭时刷新图标 ----------
+        // ---------- 4. 工具关闭：刷新可收获植物 + 清理观赏性植物图标 ----------
         [HarmonyPostfix]
         [HarmonyPatch("OnDeactivateTool")]
         public static void OnDeactivateTool_Postfix(HarvestTool __instance)
         {
             foreach (var item in Components.HarvestDesignatables.Items)
                 _refreshIcon(item, null);
+
+            // ★ 清理观赏性植物图标
+            DecorativePlantIconPatch.ClearAll();
         }
     }
 }

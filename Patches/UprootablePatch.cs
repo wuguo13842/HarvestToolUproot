@@ -20,5 +20,13 @@ namespace AgriHarvestPriority.Patches
             var hd = __instance.GetComponent<HarvestDesignatable>();
             if (hd != null) HarvestToolPatch._refreshIcon(hd, null);
         }
+		
+		[HarmonyPostfix]
+		[HarmonyPatch("OnCleanUp")]
+		public static void OnCleanUp_Postfix(Uprootable __instance)
+		{
+			if (__instance != null)
+				DecorativePlantIconPatch.RemoveOne(__instance.gameObject);
+		}
     }
 }

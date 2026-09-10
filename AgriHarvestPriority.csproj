@@ -71,6 +71,7 @@
   <!-- 你的源码文件（根据需要增减） -->
   <ItemGroup>
     <Compile Include="Mod.cs" />
+    <Compile Include="Patches\DecorativePlantIconPatch.cs" />
     <Compile Include="Patches\HarvestDesignatablePatch.cs" />
     <Compile Include="Patches\HarvestToolPatch.cs" />
     <Compile Include="Patches\PrioritizablePatch.cs" />
@@ -86,6 +87,7 @@
       <Version>4.25.0</Version>
     </PackageReference>
     <EmbeddedResource Include="ModAssets\assets\uproot_icon.dds" />
+    <EmbeddedResource Include="ModAssets\assets\not_uproot_icon.dds" />
     <TranslationFiles Include="ModAssets\translations\*.po" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
