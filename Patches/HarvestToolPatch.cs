@@ -58,30 +58,40 @@ namespace AgriHarvestPriority.Patches
             _cachedOptions = newOptions;
         }
 
-		// ---------- 2. 工具激活：同步刷新观赏性植物图标 + 异步刷新可收获植物 ----------
-		[HarmonyPostfix]
-		[HarmonyPatch("OnActivateTool")]
-		public static void OnActivateTool_Postfix(HarvestTool __instance)
-		{
-			_cachedOptions = (ToolParameterMenu.ToggleData[])_optionsField.GetValue(__instance);
+        // ---------- 2. 工具激活：同步刷新观赏性植物图标 + overlay 高亮 + 异步刷新可收获植物 ----------
+        [HarmonyPostfix]
+        [HarmonyPatch("OnActivateTool")]
+        public static void OnActivateTool_Postfix(HarvestTool __instance)
+        {
+            _cachedOptions = (ToolParameterMenu.ToggleData[])_optionsField.GetValue(__instance);
 
-			// ★ 同步刷新观赏性植物图标（不走 GameScheduler，避免异步时序问题）
-			try
-			{
-				DecorativePlantIconPatch.RefreshAll();
-			}
-			catch (Exception e)
-			{
-				Debug.LogError($"[AgriHarvestPriority] RefreshAll failed: {e}");
-			}
+            // ★ 同步刷新观赏性植物图标（不走 GameScheduler，避免异步时序问题）
+            try
+            {
+                DecorativePlantIconPatch.RefreshAll();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[AgriHarvestPriority] RefreshAll failed: {e}");
+            }
 
-			// 可收获植物仍走 GameScheduler（保持原版节奏）
-			GameScheduler.Instance.Schedule("RefreshAllHarvestIcons", 0f, (obj) =>
-			{
-				foreach (var item in Components.HarvestDesignatables.Items)
-					_refreshIcon(item, null);
-			}, null);
-		}
+            // ★ 为观赏性植物应用 overlay 高亮
+            try
+            {
+                DecorativePlantOverlayPatch.ApplyHighlight();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[AgriHarvestPriority] ApplyHighlight failed: {e}");
+            }
+
+            // 可收获植物仍走 GameScheduler（保持原版节奏）
+            GameScheduler.Instance.Schedule("RefreshAllHarvestIcons", 0f, (obj) =>
+            {
+                foreach (var item in Components.HarvestDesignatables.Items)
+                    _refreshIcon(item, null);
+            }, null);
+        }
 
         // ---------- 3. 拖动时使用缓存（含双重兜底） ----------
         [HarmonyPostfix]
@@ -119,9 +129,12 @@ namespace AgriHarvestPriority.Patches
                 var hd = go.GetComponent<HarvestDesignatable>();
                 if (hd != null) _refreshIcon(hd, null);
 
-                // ★ 刷新观赏性植物图标
+                // ★ 刷新观赏性植物图标 + 兜底高亮
                 if (DecorativePlantIconPatch.IsDecorativePlant(go))
+                {
                     DecorativePlantIconPatch.RefreshOne(uprootable);
+                    DecorativePlantOverlayPatch.ApplyOne(uprootable);
+                }
             }
             else if (isCancelMode)
             {
@@ -129,13 +142,16 @@ namespace AgriHarvestPriority.Patches
                 var hd = go.GetComponent<HarvestDesignatable>();
                 if (hd != null) _refreshIcon(hd, null);
 
-                // ★ 刷新观赏性植物图标
+                // ★ 刷新观赏性植物图标 + 兜底高亮
                 if (DecorativePlantIconPatch.IsDecorativePlant(go))
+                {
                     DecorativePlantIconPatch.RefreshOne(uprootable);
+                    DecorativePlantOverlayPatch.ApplyOne(uprootable);
+                }
             }
         }
 
-        // ---------- 4. 工具关闭：刷新可收获植物 + 清理观赏性植物图标 ----------
+        // ---------- 4. 工具关闭：刷新可收获植物 + 清理观赏性植物图标 + 恢复高亮 ----------
         [HarmonyPostfix]
         [HarmonyPatch("OnDeactivateTool")]
         public static void OnDeactivateTool_Postfix(HarvestTool __instance)
@@ -145,6 +161,16 @@ namespace AgriHarvestPriority.Patches
 
             // ★ 清理观赏性植物图标
             DecorativePlantIconPatch.ClearAll();
+
+            // ★ 恢复观赏性植物的原始外观
+            try
+            {
+                DecorativePlantOverlayPatch.RemoveHighlight();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[AgriHarvestPriority] RemoveHighlight failed: {e}");
+            }
         }
     }
 }

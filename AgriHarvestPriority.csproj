@@ -72,6 +72,7 @@
   <ItemGroup>
     <Compile Include="Mod.cs" />
     <Compile Include="Patches\DecorativePlantIconPatch.cs" />
+    <Compile Include="Patches\DecorativePlantOverlayPatch.cs" />
     <Compile Include="Patches\HarvestDesignatablePatch.cs" />
     <Compile Include="Patches\HarvestToolPatch.cs" />
     <Compile Include="Patches\PrioritizablePatch.cs" />
