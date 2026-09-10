@@ -26,7 +26,7 @@ namespace AgriHarvestPriority.Patches
             return _maskedOverlayLayer;
         }
 
-        /// <summary>在收割工具激活时调用：为所有观赏性植物应用高亮。</summary>
+        /// <summary>在拔除/取消拔除模式下调用：为所有观赏性植物应用高亮。</summary>
         public static void ApplyHighlight()
         {
             try
@@ -54,6 +54,54 @@ namespace AgriHarvestPriority.Patches
             catch (System.Exception e)
             {
                 Debug.LogError($"[AgriHarvestPriority] ApplyHighlight failed: {e}");
+            }
+        }
+
+        /// <summary>
+        /// ★ 新增：只高亮"已标记拔除"的观赏性植物，其余恢复。
+        /// 用于非拔除/取消拔除模式下，让已拔除的植物仍然可见。
+        /// </summary>
+        public static void ApplyHighlightMarkedOnly()
+        {
+            try
+            {
+                int targetLayer = GetMaskedOverlayLayer();
+                if (targetLayer < 0) return;
+
+                var uprootables = Object.FindObjectsOfType<Uprootable>();
+                if (uprootables == null) return;
+
+                foreach (var up in uprootables)
+                {
+                    if (up == null || up.gameObject == null) continue;
+                    if (!DecorativePlantIconPatch.IsDecorativePlant(up.gameObject)) continue;
+
+                    if (up.IsMarkedForUproot)
+                    {
+                        // 已标记 → 保持高亮
+                        ApplyOne(up, targetLayer);
+                    }
+                    else
+                    {
+                        // 未标记 → 确保恢复
+                        int id = up.gameObject.GetInstanceID();
+                        if (_appliedIds.Contains(id))
+                        {
+                            _appliedIds.Remove(id);
+                            var kbac = up.GetComponent<KBatchedAnimController>();
+                            if (kbac != null)
+                            {
+                                kbac.HighlightColour = Color.clear;
+                                var kpid = up.GetComponent<KPrefabID>();
+                                kbac.SetLayer(kpid != null ? kpid.defaultLayer : 0);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[AgriHarvestPriority] ApplyHighlightMarkedOnly failed: {e}");
             }
         }
 

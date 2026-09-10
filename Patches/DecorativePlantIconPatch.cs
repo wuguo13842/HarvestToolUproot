@@ -35,7 +35,7 @@ namespace AgriHarvestPriority.Patches
             return false;
         }
 
-        /// <summary>收割工具激活时调用：为所有观赏性植物创建并刷新图标。</summary>
+        /// <summary>收割工具激活 / 切换到拔除模式时调用：为所有观赏性植物创建并刷新图标。</summary>
         public static void RefreshAll()
         {
             LoadSprites();
@@ -53,6 +53,49 @@ namespace AgriHarvestPriority.Patches
                 if (up == null || up.gameObject == null) continue;
                 if (!IsDecorativePlant(up.gameObject)) continue;
                 RefreshOne(up);
+            }
+        }
+
+        /// <summary>
+        /// ★ 新增：只显示"已标记拔除"的观赏性植物图标，其余清理。
+        /// 用于非拔除/取消拔除模式下，让已拔除的植物仍然可见。
+        /// </summary>
+        public static void RefreshMarkedOnly()
+        {
+            LoadSprites();
+            if (_uprootSprite == null || _notUprootSprite == null) return;
+
+            var uprootables = Object.FindObjectsOfType<Uprootable>();
+            if (uprootables == null) return;
+
+            // 本次应保留的图标 key 集合
+            var keepIds = new HashSet<int>();
+
+            foreach (var up in uprootables)
+            {
+                if (up == null || up.gameObject == null) continue;
+                if (!IsDecorativePlant(up.gameObject)) continue;
+
+                int id = up.gameObject.GetInstanceID();
+                if (up.IsMarkedForUproot)
+                {
+                    keepIds.Add(id);
+                    RefreshOne(up);
+                }
+            }
+
+            // 清理不再需要的图标（先收集，再删除，避免遍历时修改字典）
+            var toRemove = new List<int>();
+            foreach (var kv in _icons)
+            {
+                if (!keepIds.Contains(kv.Key))
+                    toRemove.Add(kv.Key);
+            }
+            foreach (var id in toRemove)
+            {
+                if (_icons.TryGetValue(id, out var icon) && icon != null)
+                    Object.Destroy(icon);
+                _icons.Remove(id);
             }
         }
 
@@ -103,7 +146,7 @@ namespace AgriHarvestPriority.Patches
             }
         }
 
-        /// <summary>工具关闭时清理所有图标。</summary>
+        /// <summary>工具关闭 / 切换到其他选项时清理所有图标。</summary>
         public static void ClearAll()
         {
             foreach (var kv in _icons)

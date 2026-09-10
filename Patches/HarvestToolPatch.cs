@@ -17,7 +17,11 @@ namespace AgriHarvestPriority.Patches
         // ---------- 缓存 ----------
         private static ToolParameterMenu.ToggleData[] _cachedOptions;
         private static readonly FieldInfo _optionsField;
-        internal static readonly Action<HarvestDesignatable, object> _refreshIcon;
+        internal static readonly System.Action<HarvestDesignatable, object> _refreshIcon;
+
+        // ---------- 事件监听 ----------
+        private static HarvestTool _activeTool;
+        private static System.Action _optionsChangedDelegate;
 
         static HarvestToolPatch()
         {
@@ -26,8 +30,8 @@ namespace AgriHarvestPriority.Patches
                 throw new Exception("[AgriHarvestPriority] Field 'options' not found.");
 
             var refreshMethod = AccessTools.Method(typeof(HarvestDesignatable), "RefreshOverlayIcon");
-            _refreshIcon = (Action<HarvestDesignatable, object>)Delegate.CreateDelegate(
-                typeof(Action<HarvestDesignatable, object>), refreshMethod);
+            _refreshIcon = (System.Action<HarvestDesignatable, object>)Delegate.CreateDelegate(
+                typeof(System.Action<HarvestDesignatable, object>), refreshMethod);
         }
 
         /// <summary>
@@ -58,34 +62,39 @@ namespace AgriHarvestPriority.Patches
             _cachedOptions = newOptions;
         }
 
-        // ---------- 2. 工具激活：同步刷新观赏性植物图标 + overlay 高亮 + 异步刷新可收获植物 ----------
+        // ---------- 2. 工具激活：注册监听 + 根据当前选项决定显示范围 ----------
         [HarmonyPostfix]
         [HarmonyPatch("OnActivateTool")]
         public static void OnActivateTool_Postfix(HarvestTool __instance)
         {
             _cachedOptions = (ToolParameterMenu.ToggleData[])_optionsField.GetValue(__instance);
+            _activeTool = __instance;
 
-            // ★ 同步刷新观赏性植物图标（不走 GameScheduler，避免异步时序问题）
+            // ---- 2a. 注册"选项变化"监听 ----
             try
             {
-                DecorativePlantIconPatch.RefreshAll();
+                if (ToolMenu.Instance?.toolParameterMenu != null)
+                {
+                    _optionsChangedDelegate = OnOptionsChanged;
+                    ToolMenu.Instance.toolParameterMenu.onParametersChanged += _optionsChangedDelegate;
+                }
             }
             catch (Exception e)
             {
-                Debug.LogError($"[AgriHarvestPriority] RefreshAll failed: {e}");
+                Debug.LogError($"[AgriHarvestPriority] Register onParametersChanged failed: {e}");
             }
 
-            // ★ 为观赏性植物应用 overlay 高亮
+            // ---- 2b. 根据当前选项决定显示范围 ----
             try
             {
-                DecorativePlantOverlayPatch.ApplyHighlight();
+                ApplyDisplayByMode(__instance);
             }
             catch (Exception e)
             {
-                Debug.LogError($"[AgriHarvestPriority] ApplyHighlight failed: {e}");
+                Debug.LogError($"[AgriHarvestPriority] Initial apply failed: {e}");
             }
 
-            // 可收获植物仍走 GameScheduler（保持原版节奏）
+            // ---- 2c. 可收获植物仍走 GameScheduler ----
             GameScheduler.Instance.Schedule("RefreshAllHarvestIcons", 0f, (obj) =>
             {
                 foreach (var item in Components.HarvestDesignatables.Items)
@@ -151,11 +160,27 @@ namespace AgriHarvestPriority.Patches
             }
         }
 
-        // ---------- 4. 工具关闭：刷新可收获植物 + 清理观赏性植物图标 + 恢复高亮 ----------
+        // ---------- 4. 工具关闭：注销监听 + 清理图标 + 恢复高亮 ----------
         [HarmonyPostfix]
         [HarmonyPatch("OnDeactivateTool")]
         public static void OnDeactivateTool_Postfix(HarvestTool __instance)
         {
+            // 注销参数变化监听
+            try
+            {
+                if (_optionsChangedDelegate != null && ToolMenu.Instance?.toolParameterMenu != null)
+                    ToolMenu.Instance.toolParameterMenu.onParametersChanged -= _optionsChangedDelegate;
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[AgriHarvestPriority] Unregister onParametersChanged failed: {e}");
+            }
+            finally
+            {
+                _optionsChangedDelegate = null;
+                _activeTool = null;
+            }
+
             foreach (var item in Components.HarvestDesignatables.Items)
                 _refreshIcon(item, null);
 
@@ -171,6 +196,52 @@ namespace AgriHarvestPriority.Patches
             {
                 Debug.LogError($"[AgriHarvestPriority] RemoveHighlight failed: {e}");
             }
+        }
+
+        // ---------- 5. 选项变化回调：按模式决定显示范围 ----------
+        private static void OnOptionsChanged()
+        {
+            try
+            {
+                if (_activeTool == null) return;
+
+                // 刷新缓存
+                _cachedOptions = (ToolParameterMenu.ToggleData[])_optionsField.GetValue(_activeTool);
+
+                ApplyDisplayByMode(_activeTool);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[AgriHarvestPriority] OnOptionsChanged failed: {e}");
+            }
+        }
+
+        // ---------- 6. ★ 核心：按当前模式决定显示范围 ----------
+        // 拔除/取消拔除 → 显示所有观赏性植物（图标 + 高亮）
+        // 其他模式       → 只显示已拔除的观赏性植物
+        private static void ApplyDisplayByMode(HarvestTool tool)
+        {
+            if (IsUprootOrCancelModeActive(tool))
+            {
+                // 全部显示
+                DecorativePlantIconPatch.RefreshAll();
+                DecorativePlantOverlayPatch.ApplyHighlight();
+            }
+            else
+            {
+                // 只显示已拔除的
+                DecorativePlantIconPatch.RefreshMarkedOnly();
+                DecorativePlantOverlayPatch.ApplyHighlightMarkedOnly();
+            }
+        }
+
+        // ---------- 7. 判断当前是否选中"拔除"或"取消拔除" ----------
+        private static bool IsUprootOrCancelModeActive(HarvestTool tool)
+        {
+            if (tool == null) return false;
+            var opts = (ToolParameterMenu.ToggleData[])_optionsField.GetValue(tool);
+            if (opts == null || opts.Length < 4) return false;
+            return opts[UPROOT_INDEX].IsOn || opts[CANCEL_UPROOT_INDEX].IsOn;
         }
     }
 }
