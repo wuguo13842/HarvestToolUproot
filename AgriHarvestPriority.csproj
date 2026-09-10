@@ -75,6 +75,7 @@
     <Compile Include="Patches\DecorativePlantOverlayPatch.cs" />
     <Compile Include="Patches\HarvestDesignatablePatch.cs" />
     <Compile Include="Patches\HarvestToolPatch.cs" />
+    <Compile Include="Patches\PlantDetection.cs" />
     <Compile Include="Patches\PrioritizablePatch.cs" />
     <Compile Include="Patches\PriorityToolPatch.cs" />
     <Compile Include="Patches\UprootablePatch.cs" />

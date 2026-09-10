@@ -36,7 +36,7 @@ namespace AgriHarvestPriority.Patches
             try
             {
                 var go = p.gameObject;
-                if (go == null || !IsPlant(go)) return;
+                if (go == null || !PlantDetection.IsPlant(go)) return;   // ★ 改用共享方法
 
                 if (!p.showIcon) p.showIcon = true;
                 if (!p.IsPrioritizable()) p.AddRef();
@@ -45,25 +45,6 @@ namespace AgriHarvestPriority.Patches
             {
                 Debug.LogError($"[AgriHarvestPriority] TryFixPlantRefCount failed: {e}");
             }
-        }
-
-        // 植物判断（与 PrioritizeToolPatch 一致，复制一份避免耦合）
-        private static bool IsPlant(GameObject go)
-        {
-            if (go == null) return false;
-
-            if (go.GetComponent<Growing>() != null) return true;
-            if (go.GetComponent<HarvestDesignatable>() != null) return true;
-
-            var kpid = go.GetComponent<KPrefabID>();
-            if (kpid != null)
-            {
-                return kpid.HasTag(GameTags.Plant)
-                    || kpid.HasTag(GameTags.Seed)
-                    || kpid.HasTag(GameTags.CropSeed)
-                    || kpid.HasTag(GameTags.Harvestable);
-            }
-            return false;
         }
 
         // ---------- 图标偏移（原有逻辑，完整保留） ----------

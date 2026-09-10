@@ -139,7 +139,7 @@ namespace AgriHarvestPriority.Patches
                 if (hd != null) _refreshIcon(hd, null);
 
                 // ★ 刷新观赏性植物图标 + 兜底高亮
-                if (DecorativePlantIconPatch.IsDecorativePlant(go))
+                if (PlantDetection.IsDecorativePlant(go))
                 {
                     DecorativePlantIconPatch.RefreshOne(uprootable);
                     DecorativePlantOverlayPatch.ApplyOne(uprootable);
@@ -152,7 +152,7 @@ namespace AgriHarvestPriority.Patches
                 if (hd != null) _refreshIcon(hd, null);
 
                 // ★ 刷新观赏性植物图标 + 兜底高亮
-                if (DecorativePlantIconPatch.IsDecorativePlant(go))
+                if (PlantDetection.IsDecorativePlant(go))
                 {
                     DecorativePlantIconPatch.RefreshOne(uprootable);
                     DecorativePlantOverlayPatch.ApplyOne(uprootable);
@@ -221,18 +221,13 @@ namespace AgriHarvestPriority.Patches
         // 其他模式       → 只显示已拔除的观赏性植物
         private static void ApplyDisplayByMode(HarvestTool tool)
         {
-            if (IsUprootOrCancelModeActive(tool))
-            {
-                // 全部显示
-                DecorativePlantIconPatch.RefreshAll();
-                DecorativePlantOverlayPatch.ApplyHighlight();
-            }
-            else
-            {
-                // 只显示已拔除的
-                DecorativePlantIconPatch.RefreshMarkedOnly();
-                DecorativePlantOverlayPatch.ApplyHighlightMarkedOnly();
-            }
+            bool includeUnmarked = IsUprootOrCancelModeActive(tool);
+
+            // ★ 一次扫描，两侧共享
+            var decorativePlants = PlantDetection.ScanDecorativePlants();
+
+            DecorativePlantIconPatch.RefreshFrom(decorativePlants, includeUnmarked);
+            DecorativePlantOverlayPatch.ApplyFrom(decorativePlants, includeUnmarked);
         }
 
         // ---------- 7. 判断当前是否选中"拔除"或"取消拔除" ----------

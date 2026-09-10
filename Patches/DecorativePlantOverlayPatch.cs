@@ -13,8 +13,14 @@ namespace AgriHarvestPriority.Patches
         // OverlayModes.Harvest 使用的高亮颜色（源码硬编码）
         private static readonly Color HarvestHighlight = new Color(0.65f, 0.65f, 0.65f, 0.65f);
 
-        // 已应用的 GameObject instanceID 集合（用于恢复时精确匹配）
-        private static readonly HashSet<int> _appliedIds = new HashSet<int>();
+        private struct AppliedEntry
+        {
+            public KBatchedAnimController kbac;
+            public int defaultLayer;
+        }
+
+        // ★ 直接存储组件引用，RemoveHighlight 时无需再次扫描
+        private static readonly Dictionary<int, AppliedEntry> _applied = new Dictionary<int, AppliedEntry>();
 
         // 缓存 MaskedOverlay 层（避免每次查询）
         private static int _maskedOverlayLayer = -2;
@@ -26,8 +32,8 @@ namespace AgriHarvestPriority.Patches
             return _maskedOverlayLayer;
         }
 
-        /// <summary>在拔除/取消拔除模式下调用：为所有观赏性植物应用高亮。</summary>
-        public static void ApplyHighlight()
+        /// <summary>接收已扫描好的装饰性植物列表。</summary>
+        public static void ApplyFrom(List<Uprootable> decorativePlants, bool includeUnmarked)
         {
             try
             {
@@ -38,122 +44,98 @@ namespace AgriHarvestPriority.Patches
                     return;
                 }
 
-                var uprootables = Object.FindObjectsOfType<Uprootable>();
-                if (uprootables == null) return;
+                int appliedCount = 0;
 
-                int applied = 0;
-                foreach (var up in uprootables)
+                foreach (var up in decorativePlants)
                 {
                     if (up == null || up.gameObject == null) continue;
-                    if (!DecorativePlantIconPatch.IsDecorativePlant(up.gameObject)) continue;
-                    if (ApplyOne(up, targetLayer)) applied++;
-                }
 
-                Debug.Log($"[AgriHarvestPriority] Applied overlay highlight to {applied} decorative plants");
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogError($"[AgriHarvestPriority] ApplyHighlight failed: {e}");
-            }
-        }
+                    int id = up.gameObject.GetInstanceID();
 
-        /// <summary>
-        /// ★ 新增：只高亮"已标记拔除"的观赏性植物，其余恢复。
-        /// 用于非拔除/取消拔除模式下，让已拔除的植物仍然可见。
-        /// </summary>
-        public static void ApplyHighlightMarkedOnly()
-        {
-            try
-            {
-                int targetLayer = GetMaskedOverlayLayer();
-                if (targetLayer < 0) return;
-
-                var uprootables = Object.FindObjectsOfType<Uprootable>();
-                if (uprootables == null) return;
-
-                foreach (var up in uprootables)
-                {
-                    if (up == null || up.gameObject == null) continue;
-                    if (!DecorativePlantIconPatch.IsDecorativePlant(up.gameObject)) continue;
-
-                    if (up.IsMarkedForUproot)
+                    if (!includeUnmarked && !up.IsMarkedForUproot)
                     {
-                        // 已标记 → 保持高亮
-                        ApplyOne(up, targetLayer);
-                    }
-                    else
-                    {
-                        // 未标记 → 确保恢复
-                        int id = up.gameObject.GetInstanceID();
-                        if (_appliedIds.Contains(id))
+                        // 未标记 → 若有已应用的高亮则恢复
+                        // ★ .NET Framework 4.8 不支持 Remove(key, out value)，改用 TryGetValue + Remove
+                        if (_applied.TryGetValue(id, out var entry))
                         {
-                            _appliedIds.Remove(id);
-                            var kbac = up.GetComponent<KBatchedAnimController>();
-                            if (kbac != null)
+                            if (entry.kbac != null)
                             {
-                                kbac.HighlightColour = Color.clear;
-                                var kpid = up.GetComponent<KPrefabID>();
-                                kbac.SetLayer(kpid != null ? kpid.defaultLayer : 0);
+                                entry.kbac.HighlightColour = Color.clear;
+                                entry.kbac.SetLayer(entry.defaultLayer);
                             }
+                            _applied.Remove(id);
                         }
+                        continue;
                     }
+
+                    if (ApplyOneInternal(up, id, targetLayer))
+                        appliedCount++;
                 }
+
+                if (appliedCount > 0)
+                    Debug.Log($"[AgriHarvestPriority] Applied highlight to {appliedCount} decorative plants");
             }
             catch (System.Exception e)
             {
-                Debug.LogError($"[AgriHarvestPriority] ApplyHighlightMarkedOnly failed: {e}");
+                Debug.LogError($"[AgriHarvestPriority] ApplyFrom failed: {e}");
             }
         }
 
-        /// <summary>为单个观赏性植物应用高亮（幂等）。</summary>
+        /// <summary>单个植物应用高亮（拖拽时按需调用）。</summary>
         public static bool ApplyOne(Uprootable up)
         {
+            if (up == null || up.gameObject == null) return false;
             int targetLayer = GetMaskedOverlayLayer();
             if (targetLayer < 0) return false;
-            return ApplyOne(up, targetLayer);
+            return ApplyOneInternal(up, up.gameObject.GetInstanceID(), targetLayer);
         }
 
-        private static bool ApplyOne(Uprootable up, int targetLayer)
+        /// <summary>★ 单个清理（应对 instanceID 重用与正常销毁）。</summary>
+        public static void RemoveOne(GameObject go)
         {
-            if (up == null || up.gameObject == null) return false;
+            if (go == null) return;
+            int id = go.GetInstanceID();
+            // ★ .NET Framework 4.8 不支持 Remove(key, out value)，改用 TryGetValue + Remove
+            if (_applied.TryGetValue(id, out var entry))
+            {
+                if (entry.kbac != null)
+                {
+                    entry.kbac.HighlightColour = Color.clear;
+                    entry.kbac.SetLayer(entry.defaultLayer);
+                }
+                _applied.Remove(id);
+            }
+        }
+
+        private static bool ApplyOneInternal(Uprootable up, int id, int targetLayer)
+        {
+            if (_applied.ContainsKey(id)) return false;
 
             var kbac = up.GetComponent<KBatchedAnimController>();
             if (kbac == null) return false;
 
-            int id = up.gameObject.GetInstanceID();
-            if (_appliedIds.Contains(id)) return false;
+            var kpid = up.GetComponent<KPrefabID>();
+            int defaultLayer = kpid != null ? kpid.defaultLayer : 0;
 
-            _appliedIds.Add(id);
+            _applied[id] = new AppliedEntry { kbac = kbac, defaultLayer = defaultLayer };
+
             kbac.HighlightColour = HarvestHighlight;
             kbac.SetLayer(targetLayer);
             return true;
         }
 
-        /// <summary>在收割工具关闭时调用：恢复原始状态。</summary>
+        /// <summary>恢复所有已应用的高亮（直接迭代字典，不再扫描场景）。</summary>
         public static void RemoveHighlight()
         {
             try
             {
-                var uprootables = Object.FindObjectsOfType<Uprootable>();
-                if (uprootables != null)
+                foreach (var kv in _applied)
                 {
-                    foreach (var up in uprootables)
+                    var entry = kv.Value;
+                    if (entry.kbac != null)
                     {
-                        if (up == null || up.gameObject == null) continue;
-
-                        int id = up.gameObject.GetInstanceID();
-                        if (!_appliedIds.Contains(id)) continue;
-
-                        var kbac = up.GetComponent<KBatchedAnimController>();
-                        if (kbac != null)
-                        {
-                            // 恢复高亮颜色
-                            kbac.HighlightColour = Color.clear;
-
-                            // 恢复原始层（overlay 系统用的是 KPrefabID.defaultLayer）
-                            var kpid = up.GetComponent<KPrefabID>();
-                            kbac.SetLayer(kpid != null ? kpid.defaultLayer : 0);
-                        }
+                        entry.kbac.HighlightColour = Color.clear;
+                        entry.kbac.SetLayer(entry.defaultLayer);
                     }
                 }
             }
@@ -163,7 +145,7 @@ namespace AgriHarvestPriority.Patches
             }
             finally
             {
-                _appliedIds.Clear();
+                _applied.Clear();
             }
         }
     }
