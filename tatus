@@ -1,0 +1,145 @@
+[1mdiff --git a/Patches/PriorityToolPatch.cs b/Patches/PriorityToolPatch.cs[m
+[1mindex 32897a1..b06d931 100644[m
+[1m--- a/Patches/PriorityToolPatch.cs[m
+[1m+++ b/Patches/PriorityToolPatch.cs[m
+[36m@@ -33,43 +33,68 @@[m [mnamespace AgriHarvestPriority.Patches[m
+             _currentFiltersField.SetValue(tool, filters);[m
+         }[m
+ [m
+[31m-        // ---------- 1. 在工具激活时追加“AGRICULTURE”选项 ----------[m
+[32m+[m[32m        // ---------- 1. 在工具激活时追加“AGRICULTURE”选项 + 补齐植物 refCount ----------[m
+         [HarmonyPostfix][m
+         [HarmonyPatch("OnActivateTool")][m
+         public static void OnActivateTool_Postfix(PrioritizeTool __instance)[m
+         {[m
+[31m-            var filters = GetFilters(__instance);[m
+[31m-[m
+[31m-            // 检查是否已存在，避免重复[m
+[31m-            foreach (var t in filters)[m
+[31m-                if (t.name == AgricultureFilter) return;[m
+[31m-[m
+[31m-            // 追加新选项[m
+[31m-            var list = new List<ToolParameterMenu.ToggleData>(filters);[m
+[31m-            list.Add(new ToolParameterMenu.ToggleData(AgricultureFilter, ToolParameterMenu.ToggleState.Off, false));[m
+[31m-            var newFilters = list.ToArray();[m
+[31m-[m
+[31m-            // 更新 currentFilters[m
+[31m-            SetFilters(__instance, newFilters);[m
+[32m+[m[32m            // ---- 1a. 追加农业选项（独立 try/catch，避免异常中断后续逻辑） ----[m
+[32m+[m[32m            try[m
+[32m+[m[32m            {[m
+[32m+[m[32m                var filters = GetFilters(__instance);[m
+[32m+[m
+[32m+[m[32m                // 检查是否已存在，避免重复[m
+[32m+[m[32m                bool hasFilter = false;[m
+[32m+[m[32m                if (filters != null)[m
+[32m+[m[32m                {[m
+[32m+[m[32m                    foreach (var t in filters)[m
+[32m+[m[32m                        if (t.name == AgricultureFilter) { hasFilter = true; break; }[m
+[32m+[m[32m                }[m
+[32m+[m
+[32m+[m[32m                if (!hasFilter)[m
+[32m+[m[32m                {[m
+[32m+[m[32m                    // 追加新选项[m
+[32m+[m[32m                    var list = new List<ToolParameterMenu.ToggleData>([m
+[32m+[m[32m                        filters ?? new ToolParameterMenu.ToggleData[0]);[m
+[32m+[m[32m                    list.Add(new ToolParameterMenu.ToggleData(AgricultureFilter, ToolParameterMenu.ToggleState.Off, false));[m
+[32m+[m[32m                    var newFilters = list.ToArray();[m
+[32m+[m
+[32m+[m[32m                    // 更新 currentFilters[m
+[32m+[m[32m                    SetFilters(__instance, newFilters);[m
+[32m+[m
+[32m+[m[32m                    // 刷新菜单，让新增选项立即显示[m
+[32m+[m[32m                    if (ToolMenu.Instance != null && ToolMenu.Instance.toolParameterMenu != null)[m
+[32m+[m[32m                        ToolMenu.Instance.toolParameterMenu.PopulateMenu(newFilters);[m
+[32m+[m[32m                }[m
+[32m+[m[32m            }[m
+[32m+[m[32m            catch (Exception e)[m
+[32m+[m[32m            {[m
+[32m+[m[32m                Debug.LogError($"[AgriHarvestPriority] Add filter failed: {e}");[m
+[32m+[m[32m            }[m
+ [m
+[31m-            // 刷新菜单，让新增选项立即显示[m
+[31m-            ToolMenu.Instance.toolParameterMenu.PopulateMenu(newFilters);[m
+[32m+[m[32m            // ---- 1b. ★ 核心修复：为所有植物补齐 Prioritizable 的 refCount ----[m
+[32m+[m[32m            try[m
+[32m+[m[32m            {[m
+[32m+[m[32m                EnsureAllPlantsPrioritizable();[m
+[32m+[m[32m            }[m
+[32m+[m[32m            catch (Exception e)[m
+[32m+[m[32m            {[m
+[32m+[m[32m                Debug.LogError($"[AgriHarvestPriority] EnsureAllPlantsPrioritizable failed: {e}");[m
+[32m+[m[32m            }[m
+         }[m
+ [m
+[31m-        // ---------- 2. 植物在农业模式激活时返回 AGRICULTURE 层 ----------[m
+[32m+[m[32m        // ---------- 2. 植物永远返回 AGRICULTURE 层 ----------[m
+[32m+[m[32m        // 说明：原版 GetFilterLayerFromGameObject 对植物返回 OPERATE（职务），[m
+[32m+[m[32m        //       导致植物出现在"职务"筛选里。这里拦截，让植物永远归入农业层，[m
+[32m+[m[32m        //       从而不在"职务"下显示（只在「全部」或「农业」下显示）。[m
+         [HarmonyPrefix][m
+         [HarmonyPatch("GetFilterLayerFromGameObject")][m
+         public static bool GetFilterLayerFromGameObject_Prefix(PrioritizeTool __instance, GameObject input, ref string __result)[m
+         {[m
+             if (input == null) return true;[m
+ [m
+[31m-            // 检查农业模式是否开启[m
+[31m-            var filters = GetFilters(__instance);[m
+[31m-            bool agricultureOn = false;[m
+[31m-            foreach (var toggle in filters)[m
+[31m-                if (toggle.name == AgricultureFilter && toggle.IsOn) { agricultureOn = true; break; }[m
+[31m-[m
+[31m-            if (agricultureOn && IsPlant(input))[m
+[32m+[m[32m            // 植物：永远返回农业层，避免落入原版的 OPERATE（职务）[m
+[32m+[m[32m            if (IsPlant(input))[m
+             {[m
+                 __result = AgricultureFilter;[m
+                 return false; // 跳过原方法[m
+[36m@@ -78,33 +103,97 @@[m [mnamespace AgriHarvestPriority.Patches[m
+             return true; // 继续原逻辑[m
+         }[m
+ [m
+[31m-        // 判断是否为植物（完全基于 GameTags）[m
+[32m+[m[32m        // ---------- 3. 拖拽时也顺手补齐（兜底保险） ----------[m
+[32m+[m[32m        [HarmonyPrefix][m
+[32m+[m[32m        [HarmonyPatch("TryPrioritizeGameObject")][m
+[32m+[m[32m        public static void TryPrioritizeGameObject_Prefix(GameObject target)[m
+[32m+[m[32m        {[m
+[32m+[m[32m            if (IsPlant(target))[m
+[32m+[m[32m                EnsurePlantPrioritizable(target);[m
+[32m+[m[32m        }[m
+[32m+[m
+[32m+[m[32m        // ---------- 4. 收集所有植物并补齐 refCount ----------[m
+[32m+[m[32m        private static void EnsureAllPlantsPrioritizable()[m
+[32m+[m[32m        {[m
+[32m+[m[32m            var plantSet = new HashSet<GameObject>();[m
+[32m+[m
+[32m+[m[32m            // 从 HarvestDesignatable 收集（所有可收获的植物）[m
+[32m+[m[32m            if (Components.HarvestDesignatables != null)[m
+[32m+[m[32m            {[m
+[32m+[m[32m                foreach (var hd in Components.HarvestDesignatables.Items)[m
+[32m+[m[32m                    if (hd != null && hd.gameObject != null) plantSet.Add(hd.gameObject);[m
+[32m+[m[32m            }[m
+[32m+[m
+[32m+[m[32m            // 从 Growing 收集（幼苗、未成熟植物，可能还没有 HarvestDesignatable）[m
+[32m+[m[32m            var gs = UnityEngine.Object.FindObjectsOfType<Growing>();[m
+[32m+[m[32m            if (gs != null)[m
+[32m+[m[32m            {[m
+[32m+[m[32m                foreach (var g in gs)[m
+[32m+[m[32m                    if (g != null && g.gameObject != null) plantSet.Add(g.gameObject);[m
+[32m+[m[32m            }[m
+[32m+[m
+[32m+[m[32m            int added = 0, refFixed = 0;[m
+[32m+[m[32m            foreach (var go in plantSet)[m
+[32m+[m[32m            {[m
+[32m+[m[32m                var p = go.GetComponent<Prioritizable>();[m
+[32m+[m[32m                bool hadComponent = p != null;[m
+[32m+[m[32m                bool changed = EnsurePlantPrioritizable(go);[m
+[32m+[m[32m                if (!hadComponent && changed) added++;[m
+[32m+[m[32m                else if (hadComponent && changed) refFixed++;[m
+[32m+[m[32m            }[m
+[32m+[m
+[32m+[m[32m            Debug.Log($"[AgriHarvestPriority] plants={plantSet.Count}, newComponents={added}, refCountFixed={refFixed}");[m
+[32m+[m[32m        }[m
+[32m+[m
+[32m+[m[32m        // ---------- 5. 单

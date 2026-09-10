@@ -14,7 +14,12 @@ namespace AgriHarvestPriority.Patches
         public static void OnSpawn_Postfix(Prioritizable __instance)
         {
             if (__instance == null) return;
+
+            // 1. 图标偏移（针对悬挂植物）
             AdjustIconOffset(__instance);
+
+            // 2. ★ 方案 B：植物生成时立即补齐 refCount
+            TryFixPlantRefCount(__instance);
         }
 
         [HarmonyPostfix]
@@ -25,6 +30,43 @@ namespace AgriHarvestPriority.Patches
             AdjustIconOffset(__instance);
         }
 
+        // ---------- 方案 B：OnSpawn 时补齐植物的 refCount ----------
+        private static void TryFixPlantRefCount(Prioritizable p)
+        {
+            try
+            {
+                var go = p.gameObject;
+                if (go == null || !IsPlant(go)) return;
+
+                if (!p.showIcon) p.showIcon = true;
+                if (!p.IsPrioritizable()) p.AddRef();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[AgriHarvestPriority] TryFixPlantRefCount failed: {e}");
+            }
+        }
+
+        // 植物判断（与 PrioritizeToolPatch 一致，复制一份避免耦合）
+        private static bool IsPlant(GameObject go)
+        {
+            if (go == null) return false;
+
+            if (go.GetComponent<Growing>() != null) return true;
+            if (go.GetComponent<HarvestDesignatable>() != null) return true;
+
+            var kpid = go.GetComponent<KPrefabID>();
+            if (kpid != null)
+            {
+                return kpid.HasTag(GameTags.Plant)
+                    || kpid.HasTag(GameTags.Seed)
+                    || kpid.HasTag(GameTags.CropSeed)
+                    || kpid.HasTag(GameTags.Harvestable);
+            }
+            return false;
+        }
+
+        // ---------- 图标偏移（原有逻辑，完整保留） ----------
         private static void AdjustIconOffset(Prioritizable __instance)
         {
             // 仅处理悬挂植物（倒着生长）
@@ -59,8 +101,7 @@ namespace AgriHarvestPriority.Patches
                 avgX = sumX / offsets.Length;
             }
 
-            // 对于倒挂植物，根部在顶部，图标应放在物体上方 height 格处（您测试有效）
-            // 如果希望图标在根部上方 0.5 格，可改为 height + 0.5f，但您测试 3 有效，故直接用 height
+            // 对于倒挂植物，根部在顶部，图标应放在物体上方 height 格处
             float offsetY = height + EXTRA_OFFSET.y;
             float offsetX = avgX + EXTRA_OFFSET.x;
 
