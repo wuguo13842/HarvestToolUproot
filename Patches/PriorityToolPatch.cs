@@ -11,6 +11,9 @@ namespace AgriHarvestPriority.Patches
     {
         private const string AgricultureFilter = "AGRICULTURE";
 
+        // ---------- 菜单上提的像素数（正值向上，负值向下） ----------
+        private const float MENU_LIFT_Y = 65f;
+
         // ---------- 追加到菜单的额外过滤器（原有 5 项语义分类 + 这 8 项） ----------
         private static readonly string[] ExtraFilters = new[]
         {
@@ -27,6 +30,11 @@ namespace AgriHarvestPriority.Patches
         // ---------- 反射缓存 ----------
         private static readonly FieldInfo _currentFiltersField;
         private static readonly MethodInfo _prioritizableOnSpawn;
+
+        // ---------- 菜单位置缓存（避免每次激活都叠加偏移） ----------
+        private static RectTransform _menuRect;
+        private static Vector2 _menuOriginalPos;
+        private static bool _menuPosSaved;
 
         static PrioritizeToolPatch()
         {
@@ -47,42 +55,90 @@ namespace AgriHarvestPriority.Patches
             => _currentFiltersField.SetValue(tool, filters);
 
         // ---------- 1. 工具激活 ----------
-		[HarmonyPostfix]
-		[HarmonyPatch("OnActivateTool")]
-		public static void OnActivateTool_Postfix(PrioritizeTool __instance)
-		{
-			// ---- 1a. 追加农业 + 物理分类选项 ----
-			try
-			{
-				EnsureExtraFilters(__instance);
-			}
-			catch (Exception e)
-			{
-				Debug.LogError($"[AgriHarvestPriority] Add filters failed: {e}");
-			}
+        [HarmonyPostfix]
+        [HarmonyPatch("OnActivateTool")]
+        public static void OnActivateTool_Postfix(PrioritizeTool __instance)
+        {
+            // ---- 1a. 追加农业 + 物理分类选项 ----
+            try
+            {
+                EnsureExtraFilters(__instance);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[AgriHarvestPriority] Add filters failed: {e}");
+            }
 
-			// ---- 1b. 全场景补齐 refCount ----
-			try
-			{
-				EnsureAllPlantsPrioritizable();
-			}
-			catch (Exception e)
-			{
-				Debug.LogError($"[AgriHarvestPriority] EnsureAllPlantsPrioritizable failed: {e}");
-			}
+            // ---- 1b. 全场景补齐 refCount（每次激活都扫，保证读档后新植物也显示） ----
+            try
+            {
+                EnsureAllPlantsPrioritizable();
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[AgriHarvestPriority] EnsureAllPlantsPrioritizable failed: {e}");
+            }
 
-			// ---- 1c. ★ 新增：隐藏"任务优先度"图示，避免与扩长的菜单重叠 ----
-			try
-			{
-				ToolMenu.Instance?.PriorityScreen?.ShowDiagram(false);
-			}
-			catch (Exception e)
-			{
-				Debug.LogError($"[AgriHarvestPriority] Hide diagram failed: {e}");
-			}
-		}
+            // ---- 1c. 隐藏"任务优先度"图示，避免与扩长的菜单重叠 ----
+            try
+            {
+                ToolMenu.Instance?.PriorityScreen?.ShowDiagram(false);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[AgriHarvestPriority] Hide diagram failed: {e}");
+            }
 
-        /// <summary>在原有过滤器之后追加缺失项，不替换。</summary>
+            // ---- 1d. 向上提菜单，让出底部空间 ----
+            try
+            {
+                var content = ToolMenu.Instance?.toolParameterMenu?.content;
+                if (content != null)
+                {
+                    if (_menuRect == null || !_menuPosSaved)
+                    {
+                        _menuRect = content.GetComponent<RectTransform>();
+                        if (_menuRect != null)
+                        {
+                            _menuOriginalPos = _menuRect.anchoredPosition;
+                            _menuPosSaved = true;
+                        }
+                    }
+
+                    if (_menuRect != null)
+                    {
+                        _menuRect.anchoredPosition = new Vector2(
+                            _menuOriginalPos.x,
+                            _menuOriginalPos.y + MENU_LIFT_Y);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[AgriHarvestPriority] Lift menu failed: {e}");
+            }
+        }
+
+        // ---------- 2. 工具关闭：恢复菜单位置 ----------
+        [HarmonyPostfix]
+        [HarmonyPatch("OnDeactivateTool")]
+        public static void OnDeactivateTool_Postfix(PrioritizeTool __instance)
+        {
+            try
+            {
+                if (_menuRect != null && _menuPosSaved)
+                {
+                    _menuRect.anchoredPosition = _menuOriginalPos;
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[AgriHarvestPriority] Restore menu pos failed: {e}");
+            }
+            // 注意：不清理 _menuRect / _menuPosSaved，因为 prefab 会复用
+        }
+
+        // ---------- 3. 追加缺失的过滤器（不替换原有 5 项语义分类） ----------
         private static void EnsureExtraFilters(PrioritizeTool tool)
         {
             var filters = GetFilters(tool);
@@ -114,7 +170,7 @@ namespace AgriHarvestPriority.Patches
                 ToolMenu.Instance.toolParameterMenu.PopulateMenu(newFilters);
         }
 
-        // ---------- 2. ★ C 方案：返回第一个被激活的候选层 ----------
+        // ---------- 4. ★ C 方案：返回第一个被激活的候选层 ----------
         // 拖拽路径 TryPrioritizeGameObject 与渲染路径 PrioritizableRenderer.renderEveryTickVisitHelper
         // 都调用 GetFilterLayerFromGameObject + IsActiveLayer 单层判定。
         // 只要返回"激活的那个层"，两处路径都会自动通过 → 实现多维度命中。
@@ -191,7 +247,7 @@ namespace AgriHarvestPriority.Patches
             return null;
         }
 
-        // ---------- 3. 拖拽时兜底补齐植物 refCount ----------
+        // ---------- 5. 拖拽时兜底补齐植物 refCount ----------
         [HarmonyPrefix]
         [HarmonyPatch("TryPrioritizeGameObject")]
         public static void TryPrioritizeGameObject_Prefix(GameObject target)
@@ -200,7 +256,7 @@ namespace AgriHarvestPriority.Patches
                 EnsurePlantPrioritizable(target);
         }
 
-        // ---------- 4. 全场景补齐（每次激活工具都扫） ----------
+        // ---------- 6. 全场景补齐（每次激活工具都扫） ----------
         private static void EnsureAllPlantsPrioritizable()
         {
             var plantSet = new HashSet<GameObject>();
@@ -233,7 +289,7 @@ namespace AgriHarvestPriority.Patches
             Debug.Log($"[AgriHarvestPriority] Scan: plants={plantSet.Count}, newComponents={added}, refFixed={fixedRef}");
         }
 
-        // ---------- 5. 单个植物补齐 ----------
+        // ---------- 7. 单个植物补齐 ----------
         private static bool EnsurePlantPrioritizable(GameObject go)
         {
             if (go == null) return false;
